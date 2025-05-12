@@ -1,0 +1,310 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class GameManager : MonoBehaviour
+{
+    public static GameManager Instance { get; private set; }
+
+    [Header("Game Settings")]
+    public float baseSpeed = 5f;
+    public float speedIncreasePerLevel = 0.5f;
+    public int pointsPerTrash = 100;
+    public int penaltyForMissedTrash = 50;
+
+    // Using FindObjectOfType to avoid circular references
+    private PlayerController _player;
+    private LevelManager _levelManager;
+    private UIManager _uiManager;
+    private AudioManager _audioManager;
+
+    // Public properties to access these components
+    public PlayerController player { get { return _player; } }
+    public LevelManager levelManager { get { return _levelManager; } }
+    public UIManager uiManager { get { return _uiManager; } }
+    public AudioManager audioManager { get { return _audioManager; } }
+
+    [Header("Game State")]
+    public int currentLevel = 1;
+    public int score = 0;
+    public float currentSpeed;
+    public bool gameOver = false;
+    public bool isPaused = false;
+    public bool isGameStarted = false;
+
+    // Define the enum without a header
+    public enum TruckType { General, Paper, Plastic, Glass }
+
+    [Header("Truck Types")]
+    public TruckType currentTruckType = TruckType.General;
+
+    [Header("Truck Sprites")]
+    public Sprite generalTruckSprite;
+    public Sprite paperTruckSprite;
+    public Sprite plasticTruckSprite;
+    public Sprite glassTruckSprite;
+
+    private void Awake()
+    {
+        // Singleton pattern
+        if (Instance == null)
+        {
+            Instance = this;
+
+            // FIXED: Only call DontDestroyOnLoad if this is a root GameObject
+            if (transform.parent == null)
+            {
+                DontDestroyOnLoad(gameObject);
+            }
+            else
+            {
+                Debug.LogWarning("GameManager should be attached to a root GameObject for DontDestroyOnLoad to work properly. Moving to root.");
+                transform.SetParent(null); // Make it a root GameObject
+                DontDestroyOnLoad(gameObject);
+            }
+        }
+        else
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        // Initialize default values
+        currentSpeed = baseSpeed;
+    }
+
+    private void Start()
+    {
+        // Find references after all objects are initialized
+        _player = Object.FindFirstObjectByType<PlayerController>();
+        _levelManager = Object.FindFirstObjectByType<LevelManager>();
+        _uiManager = Object.FindFirstObjectByType<UIManager>();
+        _audioManager = Object.FindFirstObjectByType<AudioManager>();
+
+        // Show the title screen when game starts
+        ShowTitleScreen();
+    }
+
+    public void StartGame()
+    {
+        isGameStarted = true;
+        gameOver = false;
+        isPaused = false;
+        Time.timeScale = 1f;
+        score = 0;
+        currentLevel = 1;
+        currentSpeed = baseSpeed;
+
+        // Reset player position
+        if (_player != null)
+        {
+            _player.ResetPosition();
+        }
+
+        // Start with general truck
+        SetTruckType(TruckType.General);
+
+        // Generate level
+        if (_levelManager != null)
+        {
+            _levelManager.GenerateLevel(currentLevel);
+        }
+
+        // Update UI
+        if (_uiManager != null)
+        {
+            _uiManager.UpdateLevelText(currentLevel);
+            _uiManager.UpdateScoreText(score);
+            _uiManager.HideTitleScreen();
+            _uiManager.HideGameOverScreen();
+
+            // Make sure pause screen is hidden too
+            if (_uiManager.pauseScreen != null)
+            {
+                _uiManager.HidePauseScreen();
+            }
+        }
+    }
+
+    public void GameOver()
+    {
+        if (!gameOver)
+        {
+            gameOver = true;
+
+            if (_audioManager != null)
+            {
+                _audioManager.PlaySound("crash");
+            }
+
+            if (_uiManager != null)
+            {
+                _uiManager.ShowGameOverScreen();
+            }
+        }
+    }
+
+    public void CollectTrash()
+    {
+        score += pointsPerTrash;
+
+        if (_audioManager != null)
+        {
+            _audioManager.PlaySound("collect");
+        }
+
+        if (_uiManager != null)
+        {
+            _uiManager.UpdateScoreText(score);
+        }
+    }
+
+    public void MissTrash()
+    {
+        score -= penaltyForMissedTrash;
+
+        if (_audioManager != null)
+        {
+            _audioManager.PlaySound("missed");
+        }
+
+        if (_uiManager != null)
+        {
+            _uiManager.UpdateScoreText(score);
+        }
+    }
+
+    public void CheckLevelCompletion()
+    {
+        if (_levelManager != null && _levelManager.IsLevelComplete())
+        {
+            LevelUp();
+        }
+    }
+
+    public void LevelUp()
+    {
+        currentLevel++;
+        currentSpeed += speedIncreasePerLevel;
+
+        // Change truck type based on level
+        if (currentLevel % 4 == 1)
+            SetTruckType(TruckType.General);
+        else if (currentLevel % 4 == 2)
+            SetTruckType(TruckType.Paper);
+        else if (currentLevel % 4 == 3)
+            SetTruckType(TruckType.Plastic);
+        else
+            SetTruckType(TruckType.Glass);
+
+        if (_audioManager != null)
+        {
+            _audioManager.PlaySound("levelup");
+        }
+
+        if (_uiManager != null)
+        {
+            _uiManager.ShowLevelUpText(currentLevel);
+            _uiManager.UpdateLevelText(currentLevel);
+        }
+
+        // Generate new level
+        if (_levelManager != null)
+        {
+            _levelManager.GenerateLevel(currentLevel);
+        }
+    }
+
+    public void SetTruckType(TruckType type)
+    {
+        currentTruckType = type;
+
+        // Update truck sprite based on type
+        if (_player != null)
+        {
+            SpriteRenderer spriteRenderer = _player.GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null)
+            {
+                switch (type)
+                {
+                    case TruckType.General:
+                        spriteRenderer.sprite = generalTruckSprite;
+                        break;
+                    case TruckType.Paper:
+                        spriteRenderer.sprite = paperTruckSprite;
+                        break;
+                    case TruckType.Plastic:
+                        spriteRenderer.sprite = plasticTruckSprite;
+                        break;
+                    case TruckType.Glass:
+                        spriteRenderer.sprite = glassTruckSprite;
+                        break;
+                }
+            }
+        }
+    }
+
+    public void ShowTitleScreen()
+    {
+        isGameStarted = false;
+        isPaused = false;
+        Time.timeScale = 1f;
+
+        if (_uiManager != null)
+        {
+            _uiManager.ShowTitleScreen();
+        }
+    }
+
+    public void RestartGame()
+    {
+        StartGame();
+    }
+
+    public void TogglePause()
+    {
+        if (!isGameStarted || gameOver) return;
+
+        isPaused = !isPaused;
+        Time.timeScale = isPaused ? 0f : 1f;
+
+        if (_uiManager != null)
+        {
+            if (isPaused)
+                _uiManager.ShowPauseScreen();
+            else
+                _uiManager.HidePauseScreen();
+        }
+    }
+
+    public void QuitGame()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+    }
+
+    // Handle keyboard input for game state
+    private void Update()
+    {
+        // Start game with any key
+        if (!isGameStarted && Input.anyKeyDown)
+        {
+            StartGame();
+        }
+
+        // Restart game with any key when game over
+        if (gameOver && Input.anyKeyDown)
+        {
+            RestartGame();
+        }
+
+        // Pause/unpause with Escape key
+        if (Input.GetKeyDown(KeyCode.Escape) && isGameStarted && !gameOver)
+        {
+            TogglePause();
+        }
+    }
+}
