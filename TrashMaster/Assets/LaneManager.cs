@@ -11,7 +11,7 @@ public class LaneManager : MonoBehaviour
 
     [Header("Lane Settings")]
     public int laneCount = 7;
-    public float laneWidth = 60f;
+    public float laneWidth = 10f;
 
     // Debug settings
     [Header("Debug")]
