@@ -51,22 +51,13 @@ public class GameManager : MonoBehaviour
         {
             Instance = this;
 
-            // FIXED: Only call DontDestroyOnLoad if this is a root GameObject
-            if (transform.parent == null)
-            {
-                DontDestroyOnLoad(gameObject);
-            }
-            else
-            {
-                Debug.LogWarning("GameManager should be attached to a root GameObject for DontDestroyOnLoad to work properly. Moving to root.");
-                transform.SetParent(null); // Make it a root GameObject
-                DontDestroyOnLoad(gameObject);
-            }
+            // Ensure it's a root GameObject
+            transform.parent = null;
+            DontDestroyOnLoad(gameObject);
         }
         else
         {
             Destroy(gameObject);
-            return;
         }
 
         // Initialize default values
