@@ -8,29 +8,55 @@ public class RoadScroller : MonoBehaviour
     public float scrollSpeed = 1f;
     public bool useGlobalSpeed = true;
 
-    [Header("References")]
+    // Reference to the sprite, can be assigned in editor or found automatically
     public SpriteRenderer roadSprite;
 
-    private Vector2 startPosition;
+    private Vector2 initialPosition;
     private float spriteHeight;
+    private bool isSideLane = false;
 
-    // No GameManager access in Awake
     private void Awake()
     {
         // Initialize only local components
-    }
-
-    private void Start()
-    {
         if (roadSprite == null)
         {
             roadSprite = GetComponent<SpriteRenderer>();
         }
+    }
 
+    private void Start()
+    {
+        // Safe to access GameManager here
         if (roadSprite != null)
         {
-            startPosition = transform.position;
-            spriteHeight = roadSprite.bounds.size.y / 2; // Divided by 2 because we'll reset at half height
+            initialPosition = transform.position;
+
+            // Determine if this is a side lane by name
+            string name = gameObject.name.ToLower();
+            isSideLane = name.Contains("left") || name.Contains("right") ||
+                         name.Contains("side") || name.EndsWith("_0") || name.EndsWith("_6");
+
+            if (isSideLane)
+            {
+                // Side lanes have taller sprites (630px)
+                spriteHeight = roadSprite.bounds.size.y;
+            }
+            else if (roadSprite.drawMode == SpriteDrawMode.Tiled)
+            {
+                // For tiled center lanes, use the size property
+                spriteHeight = roadSprite.size.y;
+            }
+            else
+            {
+                // Regular center lanes
+                spriteHeight = roadSprite.bounds.size.y;
+            }
+
+            Debug.Log($"Lane {gameObject.name} - Sprite height: {spriteHeight}");
+        }
+        else
+        {
+            Debug.LogError($"No SpriteRenderer found on lane {gameObject.name}");
         }
     }
 
@@ -45,10 +71,12 @@ public class RoadScroller : MonoBehaviour
             transform.Translate(Vector3.down * speed * Time.deltaTime);
 
             // Check if road needs to be reset
-            if (transform.position.y <= -spriteHeight)
+            if (transform.position.y <= initialPosition.y - spriteHeight / 2)
             {
                 // Reset position
-                transform.position = startPosition;
+                Vector3 resetPosition = transform.position;
+                resetPosition.y = initialPosition.y;
+                transform.position = resetPosition;
             }
         }
     }
