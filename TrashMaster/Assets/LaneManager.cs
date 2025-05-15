@@ -7,23 +7,25 @@ public class LaneManager : MonoBehaviour
     public static LaneManager Instance { get; private set; }
 
     [Header("Lane Sprites")]
-    public Sprite centerLaneSprite;
-    public Sprite leftSideLaneSprite;
-    public Sprite rightSideLaneSprite;
+    public Sprite centerLaneSprite; // Gray road with white dashed lines
+    public Sprite leftSideSprite;   // Green left side
+    public Sprite rightSideSprite;  // Green right side
 
     [Header("Lane Settings")]
     public int totalLanes = 7;
     public float laneWidth = 60f;
     public float sideLaneWidth = 69f;
 
-    [Header("Display Settings")]
-    public Color backgroundColor = new Color(0.5f, 0.8f, 0.9f); // Light blue sky color
-    public bool fillScreen = true;
-    public float laneHeightMultiplier = 2.0f; // How much taller than screen height
+    [Header("Camera Settings")]
+    public Color backgroundColor = Color.cyan;
+    public float verticalViewportPercentage = 0.7f;
+
+    [Header("Scrolling Settings")]
+    public int segmentsPerLane = 3;
+    public float scrollSpeed = 0.5f;
 
     private List<GameObject> lanes = new List<GameObject>();
     private Camera mainCamera;
-    private float totalWidth;
 
     void Awake()
     {
@@ -33,146 +35,164 @@ public class LaneManager : MonoBehaviour
             Destroy(gameObject);
 
         mainCamera = Camera.main;
+        if (mainCamera == null)
+        {
+            Debug.LogError("No main camera found!");
+            return;
+        }
+
+        // Set camera background color
+        mainCamera.backgroundColor = backgroundColor;
     }
 
     void Start()
     {
-        // Set camera background color
-        if (mainCamera != null)
-        {
-            mainCamera.backgroundColor = backgroundColor;
-        }
-
-        StartCoroutine(DelayedInit());
-    }
-
-    private IEnumerator DelayedInit()
-    {
-        yield return null; // Wait for GameManager to initialize
-        CreateLanes();
-        AdjustCamera();
-    }
-
-    void CreateLanes()
-    {
-        // Clear existing lanes
+        // Remove any existing lane objects
         foreach (Transform child in transform)
-            Destroy(child.gameObject);
-
-        lanes.Clear();
-
-        // Calculate total width
-        totalWidth = (totalLanes - 2) * laneWidth + 2 * sideLaneWidth;
-
-        // Calculate screen dimensions
-        float screenHeight = 2f * mainCamera.orthographicSize;
-        float screenWidth = screenHeight * mainCamera.aspect;
-
-        // Position lanes to fill screen width
-        float startX = -totalWidth / 2f;
-
-        Debug.Log($"Creating {totalLanes} lanes with total width {totalWidth}, screen width {screenWidth}");
-
-        // Create each lane
-        for (int i = 0; i < totalLanes; i++)
         {
-            GameObject lane = new GameObject($"Lane_{i}");
-            lane.transform.parent = transform;
-
-            SpriteRenderer renderer = lane.AddComponent<SpriteRenderer>();
-
-            // Set width and sprite based on lane type
-            float width;
-            Sprite sprite;
-
-            if (i == 0) // Left side
-            {
-                width = sideLaneWidth;
-                sprite = leftSideLaneSprite;
-                renderer.sortingOrder = 0; // Behind center lanes
-            }
-            else if (i == totalLanes - 1) // Right side
-            {
-                width = sideLaneWidth;
-                sprite = rightSideLaneSprite;
-                renderer.sortingOrder = 0; // Behind center lanes
-            }
-            else // Center lanes
-            {
-                width = laneWidth;
-                sprite = centerLaneSprite;
-                renderer.sortingOrder = 1; // In front of side lanes
-            }
-
-            renderer.sprite = sprite;
-
-            // Create material that supports tiling
-            Material material = new Material(Shader.Find("Sprites/Default"));
-            if (sprite != null && sprite.texture != null)
-            {
-                material.mainTexture = sprite.texture;
-                sprite.texture.wrapMode = TextureWrapMode.Repeat;
-            }
-            renderer.material = material;
-
-            // Set up tiling
-            renderer.drawMode = SpriteDrawMode.Tiled;
-
-            // Position the lane
-            float xPos = startX + (i == 0 ? width / 2 :
-                         i == totalLanes - 1 ? totalWidth - sideLaneWidth / 2 :
-                         sideLaneWidth + (i - 1) * laneWidth + laneWidth / 2);
-
-            lane.transform.position = new Vector3(xPos, 0, 0);
-
-            // Make lane tall enough to fill screen height and allow for scrolling
-            float height = screenHeight * laneHeightMultiplier;
-            renderer.size = new Vector2(width, height);
-
-            // Add scrolling component
-            LaneScroller scroller = lane.AddComponent<LaneScroller>();
-
-            // Add to tracking list
-            lanes.Add(lane);
-
-            Debug.Log($"Created lane {i} at x={xPos}, width={width}, height={height}");
+            Destroy(child.gameObject);
         }
 
-        Debug.Log($"Total {lanes.Count} lanes created");
+        // Configure camera and create lanes
+        ConfigureCamera();
+        CreateLanes();
     }
 
-    // Adjust camera to better fit the gameplay area
-    void AdjustCamera()
+    void ConfigureCamera()
     {
-        if (mainCamera == null)
-        {
-            Debug.LogError("Main camera not found");
-            return;
-        }
-
         // Ensure orthographic camera
         if (!mainCamera.orthographic)
         {
             mainCamera.orthographic = true;
         }
 
-        if (fillScreen)
-        {
-            // Set camera size to fit lane width
-            float screenAspect = (float)Screen.width / Screen.height;
-            float desiredSize = totalWidth / (2f * screenAspect);
+        // Calculate total lane width
+        float totalWidth = (totalLanes - 2) * laneWidth + 2 * sideLaneWidth;
 
-            // Set camera size
-            mainCamera.orthographicSize = desiredSize;
+        // Calculate camera size based on lane width and aspect ratio
+        float screenAspect = (float)Screen.width / Screen.height;
+        float sizeForWidth = totalWidth / (2f * screenAspect);
 
-            Debug.Log($"Camera adjusted to size {desiredSize} to fit total width {totalWidth}");
-        }
+        // Apply vertical percentage adjustment
+        mainCamera.orthographicSize = sizeForWidth / verticalViewportPercentage;
 
-        // Position camera to look at the center of lanes
-        mainCamera.transform.position = new Vector3(0, 0, -10);
+        // Position camera to center lanes at bottom portion
+        mainCamera.transform.position = new Vector3(
+            0,
+            mainCamera.orthographicSize * (1 - verticalViewportPercentage),
+            -10
+        );
     }
 
-    // Get lane position for player positioning
+    void CreateLanes()
+    {
+        lanes.Clear();
+
+        // Calculate total width
+        float totalWidth = (totalLanes - 2) * laneWidth + 2 * sideLaneWidth;
+
+        // Calculate screen dimensions
+        float screenHeight = 2f * mainCamera.orthographicSize;
+        float viewportHeight = screenHeight * verticalViewportPercentage;
+
+        // Calculate segment height
+        float segmentHeight = viewportHeight / segmentsPerLane;
+
+        // Calculate starting X position (leftmost point)
+        float startX = -totalWidth / 2f;
+        float posX = startX;
+
+        // Create each lane
+        for (int i = 0; i < totalLanes; i++)
+        {
+            // Set lane properties based on position
+            float width;
+            Sprite sprite;
+
+            if (i == 0) // Left side green lane
+            {
+                width = sideLaneWidth;
+                sprite = leftSideSprite;
+            }
+            else if (i == totalLanes - 1) // Right side green lane
+            {
+                width = sideLaneWidth;
+                sprite = rightSideSprite;
+            }
+            else // Center road lanes (1-5)
+            {
+                width = laneWidth;
+                sprite = centerLaneSprite;
+            }
+
+            // Create lane parent object
+            GameObject lane = new GameObject($"Lane_{i}");
+            lane.transform.parent = transform;
+            lanes.Add(lane);
+
+            // Calculate lane X position
+            float laneX;
+            if (i == 0) // Left side
+            {
+                laneX = startX + width / 2;
+            }
+            else // Other lanes
+            {
+                laneX = startX + sideLaneWidth + (i - 1) * laneWidth;
+                if (i == totalLanes - 1) // Right side
+                {
+                    laneX = startX + totalWidth - sideLaneWidth / 2;
+                }
+                else // Center lanes
+                {
+                    laneX += width / 2;
+                }
+            }
+
+            lane.transform.position = new Vector3(laneX, 0, 0);
+
+            // Create segments for this lane (stacked vertically)
+            for (int j = 0; j < segmentsPerLane * 2; j++) // Double for smooth scrolling
+            {
+                GameObject segment = new GameObject($"Segment_{j}");
+                segment.transform.parent = lane.transform;
+
+                // Add sprite renderer
+                SpriteRenderer renderer = segment.AddComponent<SpriteRenderer>();
+                renderer.sprite = sprite;
+
+                // Set proper sorting order (side lanes behind center lanes)
+                renderer.sortingOrder = (i == 0 || i == totalLanes - 1) ? 0 : 1;
+
+                // Scale sprite to match lane width and segment height
+                if (sprite != null)
+                {
+                    float spriteWidth = sprite.bounds.size.x;
+                    float spriteHeight = sprite.bounds.size.y;
+
+                    // Calculate scale to match width and height
+                    float scaleX = width / spriteWidth;
+                    float scaleY = segmentHeight / spriteHeight;
+
+                    segment.transform.localScale = new Vector3(scaleX, scaleY, 1);
+                }
+
+                // Position segment vertically with spacing
+                float yPos = (j - segmentsPerLane) * segmentHeight;
+                segment.transform.localPosition = new Vector3(0, yPos, 0);
+            }
+
+            // Add scrolling behavior
+            SegmentScroller scroller = lane.AddComponent<SegmentScroller>();
+            scroller.scrollSpeed = scrollSpeed;
+            scroller.segmentHeight = segmentHeight;
+
+            // Move to next lane position
+            posX += width;
+        }
+    }
+
+    // Helper method to get lane position for player
     public Vector3 GetLanePosition(int laneIndex)
     {
         if (laneIndex < 0 || laneIndex >= lanes.Count)
@@ -181,16 +201,18 @@ public class LaneManager : MonoBehaviour
             return new Vector3(0, -mainCamera.orthographicSize + 1f, 0);
         }
 
-        Vector3 pos = lanes[laneIndex].transform.position;
-        pos.y = -mainCamera.orthographicSize + 1f; // Bottom of screen + offset
-        return pos;
+        // Get lane X position
+        float xPos = lanes[laneIndex].transform.position.x;
+
+        // Bottom of screen with offset for player
+        float yPos = -mainCamera.orthographicSize + 1f;
+
+        return new Vector3(xPos, yPos, 0);
     }
 
     // Get lane width
     public float GetLaneWidth(int laneIndex)
     {
-        if (laneIndex == 0 || laneIndex == totalLanes - 1)
-            return sideLaneWidth;
-        return laneWidth;
+        return (laneIndex == 0 || laneIndex == totalLanes - 1) ? sideLaneWidth : laneWidth;
     }
 }
