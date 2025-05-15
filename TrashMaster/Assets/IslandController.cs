@@ -11,10 +11,9 @@ public class IslandController : MonoBehaviour
 
     private List<GameObject> allParts = new List<GameObject>();
 
-    // No GameManager access in Awake
     private void Awake()
     {
-        // Initialize local components
+        // Initialize island parts
         InitializeIslandParts();
     }
 

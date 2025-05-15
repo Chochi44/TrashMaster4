@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class TrashItem : MonoBehaviour
@@ -16,12 +14,6 @@ public class TrashItem : MonoBehaviour
 
     // Visual effect for collection
     public GameObject collectionEffectPrefab;
-
-    // No GameManager access in Awake
-    private void Awake()
-    {
-        // Initialize only local components
-    }
 
     public void Collect()
     {

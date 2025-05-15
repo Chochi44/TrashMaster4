@@ -6,6 +6,10 @@ public class LaneManager : MonoBehaviour
 {
     public static LaneManager Instance { get; private set; }
 
+    // Event system for lane changes
+    public delegate void LaneConfigurationChanged(int centerLaneCount);
+    public static event LaneConfigurationChanged OnLaneConfigurationChanged;
+
     [Header("Lane Sprites")]
     public Sprite centerLaneSprite;
     public Sprite leftSideSprite;
@@ -82,14 +86,29 @@ public class LaneManager : MonoBehaviour
     {
         if (level != currentLevel)
         {
+            int previousLaneCount = currentCenterLaneCount;
+
             currentLevel = level;
             UpdateLaneCountForLevel(level);
             UpdateScrollSpeed();
 
-            // Recreate lanes with new count
-            ClearLanes();
-            CreateLanesForScreen();
+            // Recreate lanes with new count if it changed
+            if (previousLaneCount != currentCenterLaneCount)
+            {
+                ClearLanes();
+                CreateLanesForScreen();
+
+                // Notify listeners about lane count change
+                NotifyLaneConfigurationChanged();
+            }
         }
+    }
+
+    // Notify listeners when lane configuration changes
+    private void NotifyLaneConfigurationChanged()
+    {
+        Debug.Log($"Lane configuration changed: {currentCenterLaneCount} center lanes");
+        OnLaneConfigurationChanged?.Invoke(currentCenterLaneCount);
     }
 
     // Update scroll speed based on current game speed

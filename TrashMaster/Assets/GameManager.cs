@@ -89,7 +89,14 @@ public class GameManager : MonoBehaviour
         // Reset player position
         if (_player != null)
         {
+            // Make sure player is active
+            _player.gameObject.SetActive(true);
+
+            // Reset position
             _player.ResetPosition();
+
+            // Notify about initial level
+            _player.OnLevelChanged(currentLevel);
         }
 
         // Start with general truck
@@ -194,6 +201,12 @@ public class GameManager : MonoBehaviour
         else
             SetTruckType(TruckType.Glass);
 
+        // Notify player controller about level change
+        if (_player != null)
+        {
+            _player.OnLevelChanged(currentLevel);
+        }
+
         if (_audioManager != null)
         {
             _audioManager.PlaySound("levelup");
@@ -216,27 +229,17 @@ public class GameManager : MonoBehaviour
     {
         currentTruckType = type;
 
-        // Update truck sprite based on type
+        // Update the player's truck sprite and appearance
         if (_player != null)
         {
-            SpriteRenderer spriteRenderer = _player.GetComponent<SpriteRenderer>();
-            if (spriteRenderer != null)
+            // Update truck appearance
+            _player.UpdateTruckAppearance(type);
+
+            // Get truck type controller if available
+            TruckTypeController typeController = _player.GetComponent<TruckTypeController>();
+            if (typeController != null)
             {
-                switch (type)
-                {
-                    case TruckType.General:
-                        spriteRenderer.sprite = generalTruckSprite;
-                        break;
-                    case TruckType.Paper:
-                        spriteRenderer.sprite = paperTruckSprite;
-                        break;
-                    case TruckType.Plastic:
-                        spriteRenderer.sprite = plasticTruckSprite;
-                        break;
-                    case TruckType.Glass:
-                        spriteRenderer.sprite = glassTruckSprite;
-                        break;
-                }
+                typeController.SetTruckType(type);
             }
         }
     }
@@ -279,7 +282,7 @@ public class GameManager : MonoBehaviour
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
-            Application.Quit();
+        Application.Quit();
 #endif
     }
 

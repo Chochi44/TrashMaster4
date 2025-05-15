@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class TruckTypeController : MonoBehaviour
@@ -22,12 +20,6 @@ public class TruckTypeController : MonoBehaviour
 
     private GameManager.TruckType currentType = GameManager.TruckType.General;
 
-    // Don't access GameManager in Awake
-    private void Awake()
-    {
-        // Initialize only local components
-    }
-
     private void Start()
     {
         // Initialize with general truck
@@ -45,7 +37,7 @@ public class TruckTypeController : MonoBehaviour
     {
         currentType = type;
 
-        // Update truck sprite based on type (already handled by GameManager, this is for visual effects)
+        // Update truck sprite based on type (already handled by GameManager)
 
         // Update indicators
         if (generalIndicator != null) generalIndicator.SetActive(type == GameManager.TruckType.General);
