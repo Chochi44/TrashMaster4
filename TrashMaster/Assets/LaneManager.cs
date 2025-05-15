@@ -12,9 +12,14 @@ public class LaneManager : MonoBehaviour
     public Sprite rightSideSprite;
 
     [Header("Lane Configuration")]
-    public int centerLaneCount = 5; // Number of center lanes
+    public int baseCenterLaneCount = 5; // Starting number of center lanes (at level 1)
+    public int maxCenterLaneCount = 9;  // Maximum center lanes at highest level
     [Range(0.0f, 0.3f)]
     public float sideLaneWidthRatio = 0.15f; // Side lanes take 15% of screen width each
+
+    [Header("Level Scaling")]
+    public int lanesIncreaseEveryNLevels = 2; // Add lane every N levels
+    public int additionalLanesPerStep = 1;    // How many lanes to add each step
 
     [Header("Camera Settings")]
     public Color backgroundColor = Color.cyan;
@@ -26,6 +31,8 @@ public class LaneManager : MonoBehaviour
 
     private List<GameObject> lanes = new List<GameObject>();
     private Camera mainCamera;
+    private int currentLevel = 1;
+    private int currentCenterLaneCount;
 
     void Awake()
     {
@@ -47,20 +54,61 @@ public class LaneManager : MonoBehaviour
 
     void Start()
     {
-        // Clear any existing lanes
-        foreach (Transform child in transform)
+        // Set initial lane count based on level 1
+        currentCenterLaneCount = baseCenterLaneCount;
+
+        // Check if GameManager exists and get current level
+        if (GameManager.Instance != null)
         {
-            Destroy(child.gameObject);
+            currentLevel = GameManager.Instance.currentLevel;
+            UpdateLaneCountForLevel(currentLevel);
         }
+
+        // Clear any existing lanes
+        ClearLanes();
 
         // Create lanes with direct screen-based sizing
         CreateLanesForScreen();
     }
 
+    // Call this method when level changes
+    public void UpdateForLevel(int level)
+    {
+        if (level != currentLevel)
+        {
+            currentLevel = level;
+            UpdateLaneCountForLevel(level);
+
+            // Recreate lanes with new count
+            ClearLanes();
+            CreateLanesForScreen();
+        }
+    }
+
+    // Calculate how many center lanes for a given level
+    private void UpdateLaneCountForLevel(int level)
+    {
+        // Calculate lane additions based on level
+        int additionalLanes = ((level - 1) / lanesIncreaseEveryNLevels) * additionalLanesPerStep;
+
+        // Apply the new lane count (clamped to max)
+        currentCenterLaneCount = Mathf.Min(baseCenterLaneCount + additionalLanes, maxCenterLaneCount);
+
+        Debug.Log($"Level {level}: Using {currentCenterLaneCount} center lanes");
+    }
+
+    // Clear existing lanes
+    private void ClearLanes()
+    {
+        foreach (Transform child in transform)
+        {
+            Destroy(child.gameObject);
+        }
+        lanes.Clear();
+    }
+
     void CreateLanesForScreen()
     {
-        lanes.Clear();
-
         // Get actual screen width in world units
         float screenWidth = 2 * mainCamera.orthographicSize * mainCamera.aspect;
         float screenHeight = 2 * mainCamera.orthographicSize;
@@ -68,10 +116,10 @@ public class LaneManager : MonoBehaviour
         // Calculate lane widths based on screen width
         float sideLaneWidth = screenWidth * sideLaneWidthRatio;
         float centerLanesTotalWidth = screenWidth - (2 * sideLaneWidth);
-        float centerLaneWidth = centerLanesTotalWidth / centerLaneCount;
+        float centerLaneWidth = centerLanesTotalWidth / currentCenterLaneCount;
 
         // Calculate total number of lanes
-        int totalLanes = centerLaneCount + 2; // center lanes + 2 side lanes
+        int totalLanes = currentCenterLaneCount + 2; // center lanes + 2 side lanes
 
         // Calculate segment height based on viewport percentage
         float viewportHeight = screenHeight * verticalViewportPercentage;
@@ -80,7 +128,7 @@ public class LaneManager : MonoBehaviour
         // Starting X position (left edge of screen)
         float startX = -screenWidth / 2;
 
-        Debug.Log($"Screen size: {screenWidth}x{screenHeight}");
+        Debug.Log($"Creating {totalLanes} lanes ({currentCenterLaneCount} center + 2 side) for level {currentLevel}");
         Debug.Log($"Lane widths - side: {sideLaneWidth}, center: {centerLaneWidth}");
 
         // Create all lanes to fill screen width exactly
@@ -162,25 +210,7 @@ public class LaneManager : MonoBehaviour
             SegmentScroller scroller = lane.AddComponent<SegmentScroller>();
             scroller.scrollSpeed = scrollSpeed;
             scroller.segmentHeight = segmentHeight;
-
-            Debug.Log($"Created lane {i} at x={xPos} with width {width}");
         }
-    }
-
-    // Configure camera based on desired vertical percentage
-    void ConfigureCamera()
-    {
-        // Get screen dimensions
-        float screenWidth = Screen.width;
-        float screenHeight = Screen.height;
-        float aspect = screenWidth / screenHeight;
-
-        // Position camera at screen bottom to show lanes
-        mainCamera.transform.position = new Vector3(
-            0,
-            mainCamera.orthographicSize * (1 - verticalViewportPercentage),
-            -10
-        );
     }
 
     // Helper method to get lane position for player
@@ -207,8 +237,20 @@ public class LaneManager : MonoBehaviour
         // Calculate based on screen width
         float screenWidth = 2 * mainCamera.orthographicSize * mainCamera.aspect;
         float sideLaneWidth = screenWidth * sideLaneWidthRatio;
-        float centerLaneWidth = (screenWidth - 2 * sideLaneWidth) / centerLaneCount;
+        float centerLaneWidth = (screenWidth - 2 * sideLaneWidth) / currentCenterLaneCount;
 
         return (laneIndex == 0 || laneIndex == lanes.Count - 1) ? sideLaneWidth : centerLaneWidth;
+    }
+
+    // Get the current number of lanes (including side lanes)
+    public int GetTotalLaneCount()
+    {
+        return currentCenterLaneCount + 2; // Center lanes + 2 side lanes
+    }
+
+    // Get the current number of center lanes (excluding side lanes)
+    public int GetCenterLaneCount()
+    {
+        return currentCenterLaneCount;
     }
 }

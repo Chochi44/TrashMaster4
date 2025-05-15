@@ -178,6 +178,12 @@ public class GameManager : MonoBehaviour
         currentLevel++;
         currentSpeed += speedIncreasePerLevel;
 
+        // Update lanes for new level if LaneManager exists
+        if (LaneManager.Instance != null)
+        {
+            LaneManager.Instance.UpdateForLevel(currentLevel);
+        }
+
         // Change truck type based on level
         if (currentLevel % 4 == 1)
             SetTruckType(TruckType.General);
