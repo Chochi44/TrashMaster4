@@ -227,6 +227,10 @@ public class GameManager : MonoBehaviour
 
     public void SetTruckType(TruckType type)
     {
+        // Check if this is actually a change
+        bool isTypeChange = (currentTruckType != type);
+
+        // Set the new type
         currentTruckType = type;
 
         // Update the player's truck sprite and appearance
@@ -241,6 +245,12 @@ public class GameManager : MonoBehaviour
             {
                 typeController.SetTruckType(type);
             }
+        }
+
+        // Show notification about truck type change (but only if it's during gameplay)
+        if (isTypeChange && isGameStarted && !gameOver && _uiManager != null)
+        {
+            _uiManager.ShowTruckTypeChangeText(type);
         }
     }
 
