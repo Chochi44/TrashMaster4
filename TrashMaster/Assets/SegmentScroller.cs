@@ -6,17 +6,22 @@ public class SegmentScroller : MonoBehaviour
     public float segmentHeight = 1f;
 
     private Transform[] segments;
-    private float segmentCount;
+    private float totalHeight;
 
     void Start()
     {
-        // Collect all segment children
+        // Collect all segments
         segments = new Transform[transform.childCount];
         for (int i = 0; i < transform.childCount; i++)
         {
             segments[i] = transform.GetChild(i);
         }
-        segmentCount = segments.Length;
+
+        if (segments.Length > 0)
+        {
+            // Calculate total height of all segments
+            totalHeight = segmentHeight * segments.Length;
+        }
     }
 
     void Update()
@@ -25,25 +30,21 @@ public class SegmentScroller : MonoBehaviour
         if (GameManager.Instance == null || !GameManager.Instance.isGameStarted || GameManager.Instance.gameOver)
             return;
 
-        // Get current speed from GameManager
-        float gameSpeed = GameManager.Instance.currentSpeed;
+        // Calculate scroll amount
+        float scrollAmount = Time.deltaTime * scrollSpeed;
 
-        // Calculate scroll amount this frame
-        float scrollAmount = Time.deltaTime * gameSpeed * scrollSpeed;
-
-        // Move all segments down
-        for (int i = 0; i < segments.Length; i++)
+        foreach (Transform segment in segments)
         {
             // Move segment down
-            segments[i].Translate(0, -scrollAmount, 0);
+            segment.Translate(0, -scrollAmount, 0);
 
-            // If segment moves off the bottom
-            if (segments[i].localPosition.y < -segmentHeight * segmentCount / 2)
+            // If segment has moved off the bottom
+            if (segment.localPosition.y < -totalHeight / 2)
             {
-                // Move it to the top
-                Vector3 pos = segments[i].localPosition;
-                pos.y += segmentHeight * segmentCount;
-                segments[i].localPosition = pos;
+                // Reposition to top
+                Vector3 newPos = segment.localPosition;
+                newPos.y += totalHeight;
+                segment.localPosition = newPos;
             }
         }
     }

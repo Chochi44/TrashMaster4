@@ -27,12 +27,14 @@ public class LaneManager : MonoBehaviour
 
     [Header("Scrolling Settings")]
     public int segmentsPerLane = 3;
-    public float scrollSpeed = 0.5f;
+    public float baseScrollSpeed = 0.5f;      // Starting scroll speed at level 1
+    public float scrollSpeedMultiplier = 1.0f; // Additional multiplier if needed
 
     private List<GameObject> lanes = new List<GameObject>();
     private Camera mainCamera;
     private int currentLevel = 1;
     private int currentCenterLaneCount;
+    private float currentScrollSpeed;
 
     void Awake()
     {
@@ -50,6 +52,9 @@ public class LaneManager : MonoBehaviour
 
         // Set camera background color
         mainCamera.backgroundColor = backgroundColor;
+
+        // Initialize scrolling speed
+        currentScrollSpeed = baseScrollSpeed;
     }
 
     void Start()
@@ -57,11 +62,12 @@ public class LaneManager : MonoBehaviour
         // Set initial lane count based on level 1
         currentCenterLaneCount = baseCenterLaneCount;
 
-        // Check if GameManager exists and get current level
+        // Check if GameManager exists and get current level and speed
         if (GameManager.Instance != null)
         {
             currentLevel = GameManager.Instance.currentLevel;
             UpdateLaneCountForLevel(currentLevel);
+            UpdateScrollSpeed();
         }
 
         // Clear any existing lanes
@@ -78,10 +84,43 @@ public class LaneManager : MonoBehaviour
         {
             currentLevel = level;
             UpdateLaneCountForLevel(level);
+            UpdateScrollSpeed();
 
             // Recreate lanes with new count
             ClearLanes();
             CreateLanesForScreen();
+        }
+    }
+
+    // Update scroll speed based on current game speed
+    private void UpdateScrollSpeed()
+    {
+        if (GameManager.Instance != null)
+        {
+            // Sync with GameManager's speed
+            float gameSpeed = GameManager.Instance.currentSpeed;
+            float baseSpeed = GameManager.Instance.baseSpeed;
+
+            // Calculate speed ratio (how much faster than base speed)
+            float speedRatio = gameSpeed / baseSpeed;
+
+            // Apply to scroll speed
+            currentScrollSpeed = baseScrollSpeed * speedRatio * scrollSpeedMultiplier;
+
+            Debug.Log($"Level {currentLevel}: Updated scroll speed to {currentScrollSpeed} (game speed: {gameSpeed})");
+
+            // Update existing scrollers if any
+            UpdateAllScrollers();
+        }
+    }
+
+    // Update all existing lane scrollers with new speed
+    private void UpdateAllScrollers()
+    {
+        SegmentScroller[] scrollers = GetComponentsInChildren<SegmentScroller>();
+        foreach (SegmentScroller scroller in scrollers)
+        {
+            scroller.scrollSpeed = currentScrollSpeed;
         }
     }
 
@@ -206,9 +245,9 @@ public class LaneManager : MonoBehaviour
                 segment.transform.localPosition = new Vector3(0, yPos, 0);
             }
 
-            // Add scrolling component
+            // Add scrolling component with current speed
             SegmentScroller scroller = lane.AddComponent<SegmentScroller>();
-            scroller.scrollSpeed = scrollSpeed;
+            scroller.scrollSpeed = currentScrollSpeed;
             scroller.segmentHeight = segmentHeight;
         }
     }
@@ -252,5 +291,11 @@ public class LaneManager : MonoBehaviour
     public int GetCenterLaneCount()
     {
         return currentCenterLaneCount;
+    }
+
+    // Get current scroll speed
+    public float GetScrollSpeed()
+    {
+        return currentScrollSpeed;
     }
 }
