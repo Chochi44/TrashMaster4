@@ -24,6 +24,8 @@ public class UIManager : MonoBehaviour
     [Header("Animation Settings")]
     public float levelUpTextDuration = 2f;
     public float levelUpTextSpeed = 50f;
+    public float levelUpVerticalOffset = 50f;
+    public float truckTypeVerticalOffset = -50f;
 
     private Coroutine levelUpTextCoroutine;
     private Coroutine truckTypeTextCoroutine;
@@ -31,19 +33,48 @@ public class UIManager : MonoBehaviour
     private void Awake()
     {
         // Initialize local components
-        if (levelUpText != null)
-        {
-            levelUpText.gameObject.SetActive(false);
-        }
-
-        if (truckTypeChangeText != null)
-        {
-            truckTypeChangeText.gameObject.SetActive(false);
-        }
+        InitializeTextComponents();
 
         if (pauseScreen != null)
         {
             pauseScreen.SetActive(false);
+        }
+    }
+
+    private void InitializeTextComponents()
+    {
+        // Setup levelUpText
+        if (levelUpText != null)
+        {
+            levelUpText.gameObject.SetActive(false);
+            levelUpText.alignment = TextAlignmentOptions.Center;
+
+            // Set anchors to center of screen
+            RectTransform rectTransform = levelUpText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                rectTransform.anchoredPosition = Vector2.zero;
+            }
+        }
+
+        // Setup truckTypeChangeText
+        if (truckTypeChangeText != null)
+        {
+            truckTypeChangeText.gameObject.SetActive(false);
+            truckTypeChangeText.alignment = TextAlignmentOptions.Center;
+
+            // Set anchors to center of screen
+            RectTransform rectTransform = truckTypeChangeText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                rectTransform.anchoredPosition = Vector2.zero;
+            }
         }
     }
 
@@ -143,6 +174,13 @@ public class UIManager : MonoBehaviour
         // Start new animation
         if (levelUpText != null)
         {
+            // Position at center of screen
+            RectTransform rectTransform = levelUpText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchoredPosition = Vector2.zero;
+            }
+
             levelUpTextCoroutine = StartCoroutine(AnimateLevelUpText(level));
         }
     }
@@ -159,28 +197,42 @@ public class UIManager : MonoBehaviour
         // Start new animation
         if (truckTypeChangeText != null)
         {
+            // Position at center of screen
+            RectTransform rectTransform = truckTypeChangeText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchoredPosition = Vector2.zero;
+            }
+
             truckTypeTextCoroutine = StartCoroutine(AnimateTruckTypeText(truckType));
         }
     }
 
     private IEnumerator AnimateLevelUpText(int level)
     {
-        // Set text and position
+        // Set text content
         levelUpText.text = "LEVEL " + level;
-        levelUpText.rectTransform.anchoredPosition = new Vector2(0, 0); // Center of screen
+
+        // Reset color
+        levelUpText.color = new Color(levelUpText.color.r, levelUpText.color.g, levelUpText.color.b, 1f);
+
+        // Ensure text is active
         levelUpText.gameObject.SetActive(true);
 
-        // Store initial position
-        Vector2 startPosition = levelUpText.rectTransform.anchoredPosition;
+        // Get rect transform
+        RectTransform rectTransform = levelUpText.GetComponent<RectTransform>();
 
-        // Animate up
+        // Store initial position
+        Vector2 startPosition = rectTransform.anchoredPosition;
+
+        // Animation duration
         float startTime = Time.time;
         float duration = levelUpTextDuration;
 
         while (Time.time - startTime < duration)
         {
             // Move text upward
-            levelUpText.rectTransform.anchoredPosition += Vector2.up * levelUpTextSpeed * Time.deltaTime;
+            rectTransform.anchoredPosition += Vector2.up * levelUpTextSpeed * Time.deltaTime;
 
             // Fade out near the end
             if (Time.time - startTime > duration * 0.7f)
@@ -192,12 +244,11 @@ public class UIManager : MonoBehaviour
             yield return null;
         }
 
-        // Hide text and reset color
+        // Hide text
         levelUpText.gameObject.SetActive(false);
-        levelUpText.color = new Color(levelUpText.color.r, levelUpText.color.g, levelUpText.color.b, 1f);
 
         // Reset position for next time
-        levelUpText.rectTransform.anchoredPosition = startPosition;
+        rectTransform.anchoredPosition = startPosition;
     }
 
     private IEnumerator AnimateTruckTypeText(GameManager.TruckType truckType)
@@ -226,53 +277,27 @@ public class UIManager : MonoBehaviour
                 break;
         }
 
-        // Set text and position
+        // Set text and color
         truckTypeChangeText.text = typeText;
         truckTypeChangeText.color = textColor;
 
-        // Center the text horizontally and position it vertically
-        truckTypeChangeText.rectTransform.anchoredPosition = new Vector2(0, 0); // Center of screen
+        // Get rect transform
+        RectTransform rectTransform = truckTypeChangeText.GetComponent<RectTransform>();
 
-        // Set width to match the entire road width (all gray lanes combined)
-        if (LaneManager.Instance != null && Camera.main != null)
-        {
-            // Get total lane count and screen width
-            int totalLanes = LaneManager.Instance.GetTotalLaneCount();
-            int centerLanes = LaneManager.Instance.GetCenterLaneCount();
-            float screenWidth = Camera.main.orthographicSize * 2 * Camera.main.aspect;
-
-            // Get side lane width ratio from Lane Manager
-            float sideLaneWidthRatio = LaneManager.Instance.sideLaneWidthRatio;
-
-            // Calculate the width of all center lanes combined (the gray road area)
-            float centerLanesTotalWidth = screenWidth - (2 * screenWidth * sideLaneWidthRatio);
-
-            // Set the text width to match the center lanes width
-            truckTypeChangeText.rectTransform.sizeDelta = new Vector2(centerLanesTotalWidth, truckTypeChangeText.rectTransform.sizeDelta.y);
-
-            Debug.Log($"Screen width: {screenWidth}, Center lanes width: {centerLanesTotalWidth}");
-        }
-        else
-        {
-            // Fallback if LaneManager isn't available
-            float screenWidth = Camera.main.orthographicSize * 2 * Camera.main.aspect;
-            float roadWidth = screenWidth * 0.7f; // Assume road takes 70% of screen width
-            truckTypeChangeText.rectTransform.sizeDelta = new Vector2(roadWidth, truckTypeChangeText.rectTransform.sizeDelta.y);
-        }
-
+        // Make text visible
         truckTypeChangeText.gameObject.SetActive(true);
 
         // Store initial position
-        Vector2 startPosition = truckTypeChangeText.rectTransform.anchoredPosition;
+        Vector2 startPosition = rectTransform.anchoredPosition;
 
-        // Animate in the same way as levelUpText
+        // Animation
         float startTime = Time.time;
-        float duration = levelUpTextDuration; // Use the same duration as level up text
+        float duration = truckTypeTextDuration;
 
         while (Time.time - startTime < duration)
         {
-            // Move text upward at the same speed as levelUpText
-            truckTypeChangeText.rectTransform.anchoredPosition += Vector2.up * levelUpTextSpeed * Time.deltaTime;
+            // Move text upward
+            rectTransform.anchoredPosition += Vector2.up * levelUpTextSpeed * Time.deltaTime;
 
             // Fade out near the end
             if (Time.time - startTime > duration * 0.7f)
@@ -284,15 +309,15 @@ public class UIManager : MonoBehaviour
             yield return null;
         }
 
-        // Hide text and reset color
+        // Hide text
         truckTypeChangeText.gameObject.SetActive(false);
-        truckTypeChangeText.color = new Color(textColor.r, textColor.g, textColor.b, 1f);
 
-        // Reset position for next time
-        truckTypeChangeText.rectTransform.anchoredPosition = startPosition;
+        // Reset color and position
+        truckTypeChangeText.color = new Color(textColor.r, textColor.g, textColor.b, 1f);
+        rectTransform.anchoredPosition = startPosition;
     }
 
-    // Optional: Combined method to show both texts with coordinated positioning
+    // Method to show both level up and truck type text together
     public void ShowLevelUpAndTruckType(int level, GameManager.TruckType truckType)
     {
         // Cancel any existing animations
@@ -306,17 +331,106 @@ public class UIManager : MonoBehaviour
             StopCoroutine(truckTypeTextCoroutine);
         }
 
-        // Position level text above and truck type text below
+        // Position level up text above center
         if (levelUpText != null)
         {
-            levelUpText.rectTransform.anchoredPosition = new Vector2(0, 50); // Above center
-            levelUpTextCoroutine = StartCoroutine(AnimateLevelUpText(level));
+            RectTransform rectTransform = levelUpText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchoredPosition = new Vector2(0, levelUpVerticalOffset);
+            }
+
+            // Set content
+            levelUpText.text = "LEVEL " + level;
+
+            // Reset color
+            levelUpText.color = new Color(levelUpText.color.r, levelUpText.color.g, levelUpText.color.b, 1f);
+
+            // Make visible
+            levelUpText.gameObject.SetActive(true);
+
+            // Start animation
+            levelUpTextCoroutine = StartCoroutine(AnimateTextUpward(levelUpText, rectTransform.anchoredPosition));
         }
 
+        // Position truck type text below center
         if (truckTypeChangeText != null)
         {
-            truckTypeChangeText.rectTransform.anchoredPosition = new Vector2(0, -50); // Below center
-            truckTypeTextCoroutine = StartCoroutine(AnimateTruckTypeText(truckType));
+            // Set text and color based on truck type
+            string typeText = "";
+            Color textColor = Color.white;
+
+            switch (truckType)
+            {
+                case GameManager.TruckType.General:
+                    typeText = "GENERAL TRUCK: Collects all trash";
+                    textColor = generalTypeColor;
+                    break;
+                case GameManager.TruckType.Paper:
+                    typeText = "PAPER TRUCK: Collects paper only";
+                    textColor = paperTypeColor;
+                    break;
+                case GameManager.TruckType.Plastic:
+                    typeText = "PLASTIC TRUCK: Collects plastic only";
+                    textColor = plasticTypeColor;
+                    break;
+                case GameManager.TruckType.Glass:
+                    typeText = "GLASS TRUCK: Collects glass only";
+                    textColor = glassTypeColor;
+                    break;
+            }
+
+            // Set text and color
+            truckTypeChangeText.text = typeText;
+            truckTypeChangeText.color = textColor;
+
+            RectTransform rectTransform = truckTypeChangeText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchoredPosition = new Vector2(0, truckTypeVerticalOffset);
+            }
+
+            // Make visible
+            truckTypeChangeText.gameObject.SetActive(true);
+
+            // Start animation
+            truckTypeTextCoroutine = StartCoroutine(AnimateTextUpward(truckTypeChangeText, rectTransform.anchoredPosition));
         }
+    }
+
+    // Generic animation for moving text upward with fade out
+    private IEnumerator AnimateTextUpward(TextMeshProUGUI textComponent, Vector2 startPosition)
+    {
+        // Store color for resetting
+        Color originalColor = textComponent.color;
+
+        // Animation duration
+        float startTime = Time.time;
+        float duration = levelUpTextDuration;
+
+        // Get rect transform
+        RectTransform rectTransform = textComponent.GetComponent<RectTransform>();
+
+        while (Time.time - startTime < duration)
+        {
+            // Move text upward
+            rectTransform.anchoredPosition += Vector2.up * levelUpTextSpeed * Time.deltaTime;
+
+            // Fade out near the end
+            if (Time.time - startTime > duration * 0.7f)
+            {
+                float alpha = 1 - ((Time.time - startTime) - (duration * 0.7f)) / (duration * 0.3f);
+                textComponent.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
+            }
+
+            yield return null;
+        }
+
+        // Hide text
+        textComponent.gameObject.SetActive(false);
+
+        // Reset color and position
+        textComponent.color = originalColor;
+        rectTransform.anchoredPosition = startPosition;
     }
 }
