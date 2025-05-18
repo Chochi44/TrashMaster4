@@ -31,6 +31,7 @@ public class UIManager : MonoBehaviour
     public float levelUpTextSpeed = 50f;
     public float levelUpVerticalOffset = 50f;
     public float truckTypeVerticalOffset = -50f;
+    public float wrongTypeVerticalOffset = 0f;
 
     private Coroutine levelUpTextCoroutine;
     private Coroutine truckTypeTextCoroutine;
@@ -79,6 +80,23 @@ public class UIManager : MonoBehaviour
                 rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
                 rectTransform.pivot = new Vector2(0.5f, 0.5f);
                 rectTransform.anchoredPosition = Vector2.zero;
+            }
+        }
+
+        // Setup wrongTypeText
+        if (wrongTypeText != null)
+        {
+            wrongTypeText.gameObject.SetActive(false);
+            wrongTypeText.alignment = TextAlignmentOptions.Center;
+
+            // Set anchors to center of screen
+            RectTransform rectTransform = wrongTypeText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                rectTransform.anchoredPosition = new Vector2(0, wrongTypeVerticalOffset);
             }
         }
     }
@@ -336,10 +354,11 @@ public class UIManager : MonoBehaviour
             wrongTypeText.text = "WRONG TRUCK TYPE!";
             wrongTypeText.color = Color.red;
 
+            // Position at center of screen
             RectTransform rectTransform = wrongTypeText.GetComponent<RectTransform>();
             if (rectTransform != null)
             {
-                rectTransform.anchoredPosition = Vector2.zero;
+                rectTransform.anchoredPosition = new Vector2(0, wrongTypeVerticalOffset);
             }
 
             wrongTypeTextCoroutine = StartCoroutine(AnimateWrongTypeText());
@@ -351,35 +370,31 @@ public class UIManager : MonoBehaviour
         // Ensure text is active
         wrongTypeText.gameObject.SetActive(true);
 
-        // Store original color
-        Color originalColor = wrongTypeText.color;
-
-        // Animation duration
+        // Simple display and fade
         float startTime = Time.time;
         float duration = wrongTypeTextDuration;
 
-        while (Time.time - startTime < duration)
+        // Full visibility for most of the duration
+        wrongTypeText.color = new Color(Color.red.r, Color.red.g, Color.red.b, 1f);
+
+        yield return new WaitForSeconds(duration * 0.7f);
+
+        // Fade out at the end
+        float fadeTime = duration * 0.3f;
+        float endTime = startTime + duration;
+
+        while (Time.time < endTime)
         {
-            // Pulse effect
-            float pulse = 0.7f + 0.3f * Mathf.Sin((Time.time - startTime) * 10f);
-            wrongTypeText.transform.localScale = Vector3.one * pulse;
-
-            // Fade out near the end
-            if (Time.time - startTime > duration * 0.7f)
-            {
-                float alpha = 1 - ((Time.time - startTime) - (duration * 0.7f)) / (duration * 0.3f);
-                wrongTypeText.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
-            }
-
+            float alpha = 1 - (Time.time - (startTime + duration * 0.7f)) / fadeTime;
+            wrongTypeText.color = new Color(Color.red.r, Color.red.g, Color.red.b, alpha);
             yield return null;
         }
 
         // Hide text
         wrongTypeText.gameObject.SetActive(false);
 
-        // Reset scale and color
-        wrongTypeText.transform.localScale = Vector3.one;
-        wrongTypeText.color = originalColor;
+        // Reset color
+        wrongTypeText.color = Color.red;
     }
 
     // Method to show both level up and truck type text together

@@ -1,133 +1,214 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 public class IslandController : MonoBehaviour
 {
     [Header("Island Parts")]
-    public GameObject topPart;
-    public List<GameObject> middleParts = new List<GameObject>();
-    public GameObject bottomPart;
+    public GameObject topPartPrefab;
+    public GameObject middlePartPrefab;
+    public GameObject bottomPartPrefab;
+
+    [Range(0, 4)]
+    public int middlePartCount = 2; // How many middle parts to use
 
     private List<GameObject> allParts = new List<GameObject>();
+    private float totalHeight = 0f;
+    private bool isSetup = false;
 
     private void Awake()
     {
-        // Initialize island parts
-        InitializeIslandParts();
+        // Create the island structure
+        if (!isSetup)
+            CreateIslandParts();
     }
 
-    private void InitializeIslandParts()
+    private void OnEnable()
     {
-        // Gather all parts
-        if (topPart != null) allParts.Add(topPart);
-        allParts.AddRange(middleParts);
-        if (bottomPart != null) allParts.Add(bottomPart);
+        // Re-create parts if they were destroyed
+        if (allParts.Count == 0)
+            CreateIslandParts();
+    }
 
-        // Link all obstacle parts
-        foreach (GameObject part in allParts)
+    private void CreateIslandParts()
+    {
+        // Clear any existing parts
+        foreach (Transform child in transform)
         {
-            ObstacleItem obstacle = part.GetComponent<ObstacleItem>();
-            if (obstacle != null)
-            {
-                obstacle.isComplexObstacle = true;
-
-                // Create array of linked parts
-                List<ObstacleItem> linkedObstacles = new List<ObstacleItem>();
-                foreach (GameObject otherPart in allParts)
-                {
-                    if (otherPart != part)
-                    {
-                        ObstacleItem otherObstacle = otherPart.GetComponent<ObstacleItem>();
-                        if (otherObstacle != null)
-                        {
-                            linkedObstacles.Add(otherObstacle);
-                        }
-                    }
-                }
-
-                obstacle.linkedParts = linkedObstacles.ToArray();
-            }
+            Destroy(child.gameObject);
         }
-    }
+        allParts.Clear();
+        totalHeight = 0f;
 
-    // Helper method to position all parts in sequence
-    public void PositionIsland(float x, float y)
-    {
-        float currentY = y;
-
-        if (topPart != null)
+        // Create top part
+        if (topPartPrefab != null)
         {
-            topPart.transform.position = new Vector3(x, currentY, 0);
-            SpriteRenderer sr = topPart.GetComponent<SpriteRenderer>();
-            if (sr != null)
+            GameObject top = Instantiate(topPartPrefab, transform);
+            allParts.Add(top);
+            top.transform.localPosition = Vector3.zero;
+
+            // Get height of top part
+            SpriteRenderer topRenderer = top.GetComponent<SpriteRenderer>();
+            if (topRenderer != null)
             {
-                currentY += sr.bounds.size.y;
+                totalHeight += topRenderer.bounds.size.y;
             }
             else
             {
-                currentY += 1f; // Default if no SpriteRenderer
+                totalHeight += 0.5f; // Default height if no renderer
             }
+
+            // Set up obstacle component
+            SetupObstacleItem(top);
         }
 
-        foreach (GameObject middle in middleParts)
+        // Create middle parts
+        if (middlePartPrefab != null)
         {
-            if (middle != null)
+            for (int i = 0; i < middlePartCount; i++)
             {
-                middle.transform.position = new Vector3(x, currentY, 0);
-                SpriteRenderer sr = middle.GetComponent<SpriteRenderer>();
-                if (sr != null)
+                GameObject middle = Instantiate(middlePartPrefab, transform);
+                allParts.Add(middle);
+
+                // Position at current height
+                middle.transform.localPosition = new Vector3(0, -totalHeight, 0);
+
+                // Get height of middle part
+                SpriteRenderer middleRenderer = middle.GetComponent<SpriteRenderer>();
+                if (middleRenderer != null)
                 {
-                    currentY += sr.bounds.size.y;
+                    totalHeight += middleRenderer.bounds.size.y;
                 }
                 else
                 {
-                    currentY += 1f; // Default if no SpriteRenderer
+                    totalHeight += 0.5f; // Default height if no renderer
                 }
+
+                // Set up obstacle component
+                SetupObstacleItem(middle);
             }
         }
 
-        if (bottomPart != null)
+        // Create bottom part
+        if (bottomPartPrefab != null)
         {
-            bottomPart.transform.position = new Vector3(x, currentY, 0);
+            GameObject bottom = Instantiate(bottomPartPrefab, transform);
+            allParts.Add(bottom);
+
+            // Position at current height
+            bottom.transform.localPosition = new Vector3(0, -totalHeight, 0);
+
+            // Get height of bottom part
+            SpriteRenderer bottomRenderer = bottom.GetComponent<SpriteRenderer>();
+            if (bottomRenderer != null)
+            {
+                totalHeight += bottomRenderer.bounds.size.y;
+            }
+            else
+            {
+                totalHeight += 0.5f; // Default height if no renderer
+            }
+
+            // Set up obstacle component
+            SetupObstacleItem(bottom);
+        }
+
+        // Now link all parts together
+        LinkObstacleParts();
+
+        isSetup = true;
+    }
+
+    private void SetupObstacleItem(GameObject part)
+    {
+        // Make sure the part has an ObstacleItem component
+        ObstacleItem obstacleItem = part.GetComponent<ObstacleItem>();
+        if (obstacleItem == null)
+        {
+            obstacleItem = part.AddComponent<ObstacleItem>();
+        }
+
+        // Set it as part of a complex obstacle
+        obstacleItem.isComplexObstacle = true;
+
+        // Make sure it's tagged as an obstacle
+        part.tag = "Obstacle";
+
+        // Make sure it has a collider
+        BoxCollider2D collider = part.GetComponent<BoxCollider2D>();
+        if (collider == null)
+        {
+            collider = part.AddComponent<BoxCollider2D>();
+        }
+        collider.isTrigger = true;
+
+        // Adjust collider size based on sprite if needed
+        SpriteRenderer renderer = part.GetComponent<SpriteRenderer>();
+        if (renderer != null && (collider.size.x <= 0.001f || collider.size.y <= 0.001f))
+        {
+            collider.size = renderer.bounds.size;
         }
     }
 
-    // Helper method to get the total height of the island
-    public float GetTotalHeight()
+    private void LinkObstacleParts()
     {
-        float height = 0;
-
-        if (topPart != null)
+        // Get all obstacle items
+        List<ObstacleItem> obstacleItems = new List<ObstacleItem>();
+        foreach (GameObject part in allParts)
         {
-            SpriteRenderer sr = topPart.GetComponent<SpriteRenderer>();
-            if (sr != null)
+            ObstacleItem item = part.GetComponent<ObstacleItem>();
+            if (item != null)
             {
-                height += sr.bounds.size.y;
+                obstacleItems.Add(item);
             }
         }
 
-        foreach (GameObject middle in middleParts)
+        // Link each part to all other parts
+        foreach (ObstacleItem item in obstacleItems)
         {
-            if (middle != null)
+            List<ObstacleItem> linkedParts = new List<ObstacleItem>();
+            foreach (ObstacleItem otherItem in obstacleItems)
             {
-                SpriteRenderer sr = middle.GetComponent<SpriteRenderer>();
-                if (sr != null)
+                if (otherItem != item)
                 {
-                    height += sr.bounds.size.y;
+                    linkedParts.Add(otherItem);
+                }
+            }
+            item.linkedParts = linkedParts.ToArray();
+        }
+    }
+
+    public float GetHeight()
+    {
+        return totalHeight;
+    }
+
+    // Method to position the whole island at a specific position
+    public void SetPosition(Vector3 position)
+    {
+        transform.position = position;
+    }
+
+    // These are the only main object parts that count for level completion
+    public void SetMainObjectParts(bool isMainObject)
+    {
+        // Typically only count the first part or specific parts
+        if (allParts.Count > 0)
+        {
+            ObstacleItem firstPart = allParts[0].GetComponent<ObstacleItem>();
+            if (firstPart != null)
+            {
+                firstPart.isMainObject = isMainObject;
+            }
+
+            // Make other parts not main objects to avoid duplicate counting
+            for (int i = 1; i < allParts.Count; i++)
+            {
+                ObstacleItem part = allParts[i].GetComponent<ObstacleItem>();
+                if (part != null)
+                {
+                    part.isMainObject = false;
                 }
             }
         }
-
-        if (bottomPart != null)
-        {
-            SpriteRenderer sr = bottomPart.GetComponent<SpriteRenderer>();
-            if (sr != null)
-            {
-                height += sr.bounds.size.y;
-            }
-        }
-
-        return height > 0 ? height : 3f; // Default height if calculation fails
     }
 }

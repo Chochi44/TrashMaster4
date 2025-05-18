@@ -14,6 +14,9 @@ public class TrashItem : MonoBehaviour
     public bool isCollected = false;
     public bool isMainObject = true; // Used for level completion tracking
 
+    // Add a flag to track if penalty was already applied
+    private bool penaltyApplied = false;
+
     [Header("Effects")]
     public GameObject collectionEffectPrefab;
 
@@ -21,6 +24,7 @@ public class TrashItem : MonoBehaviour
     private PlayerController player;
     private BoxCollider2D myCollider;
     private LevelManager levelManager;
+    private bool isCollectible = true; // Flag to track if this trash can be collected by current truck
 
     private void Awake()
     {
@@ -35,7 +39,7 @@ public class TrashItem : MonoBehaviour
 
         // Get sprite bounds
         SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null && myCollider.size.x <= 0.001f)
+        if (spriteRenderer != null && (myCollider.size.x <= 0.001f || myCollider.size.y <= 0.001f))
         {
             myCollider.size = spriteRenderer.bounds.size;
         }
@@ -48,11 +52,55 @@ public class TrashItem : MonoBehaviour
 
         // Find level manager
         levelManager = FindObjectOfType<LevelManager>();
+
+        // Determine if this trash is collectible by the current truck
+        UpdateCollectibleStatus();
+
+        // Reset penalty flag when object is created
+        penaltyApplied = false;
+    }
+
+    private void OnEnable()
+    {
+        // When object is reactivated, reset flags
+        penaltyApplied = false;
+        isCollected = false;
+
+        // Update collectible status
+        if (GameManager.Instance != null)
+        {
+            UpdateCollectibleStatus();
+        }
+    }
+
+    // Call this when truck type changes
+    private void UpdateCollectibleStatus()
+    {
+        // Default to collectible
+        isCollectible = true;
+
+        if (GameManager.Instance != null)
+        {
+            // Get the current truck type
+            GameManager.TruckType truckType = GameManager.Instance.currentTruckType;
+
+            // General truck can collect any trash
+            if (truckType == GameManager.TruckType.General)
+                return;
+
+            // Check if this trash matches the truck type
+            if (truckType == GameManager.TruckType.Paper && !isPaper)
+                isCollectible = false;
+            else if (truckType == GameManager.TruckType.Plastic && !isPlastic)
+                isCollectible = false;
+            else if (truckType == GameManager.TruckType.Glass && !isGlass)
+                isCollectible = false;
+        }
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (other.CompareTag("Player") && !isCollected)
+        if (other.CompareTag("Player") && !isCollected && !penaltyApplied)
         {
             HandlePlayerCollision(other.gameObject);
         }
@@ -61,7 +109,7 @@ public class TrashItem : MonoBehaviour
     // Manual collision check in case triggers fail
     private void Update()
     {
-        if (!isCollected && player != null)
+        if (!isCollected && !penaltyApplied && player != null && player.GetComponent<BoxCollider2D>() != null)
         {
             if (myCollider.bounds.Intersects(player.GetComponent<BoxCollider2D>().bounds))
             {
@@ -72,32 +120,43 @@ public class TrashItem : MonoBehaviour
 
     private void HandlePlayerCollision(GameObject playerObject)
     {
-        // Check if player can collect this trash type
-        TruckTypeController truckController = playerObject.GetComponent<TruckTypeController>();
-        if (truckController != null)
+        // Update collectible status in case truck type changed
+        UpdateCollectibleStatus();
+
+        if (isCollectible)
         {
-            if (truckController.CanCollectTrash(this))
-            {
-                Collect();
-            }
-            else
-            {
-                WrongType();
-            }
+            // Correct type - collect with points
+            CollectCorrectType();
         }
         else
         {
-            // If no TruckTypeController, just collect it
-            Collect();
+            // Wrong type - apply penalty and show notification
+            // But only if we haven't already applied a penalty
+            if (!penaltyApplied)
+            {
+                ApplyWrongTypePenalty();
+
+                // Set flag to prevent multiple penalties
+                penaltyApplied = true;
+
+                // Add a short delay before allowing further collisions
+                StartCoroutine(ResetPenaltyAfterDelay(1.0f));
+            }
         }
     }
 
-    public void Collect()
+    private IEnumerator ResetPenaltyAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        penaltyApplied = false;
+    }
+
+    private void CollectCorrectType()
     {
         if (!isCollected)
         {
             isCollected = true;
-            Debug.Log("[TrashItem] Trash collected: " + gameObject.name);
+            Debug.Log("[TrashItem] Trash collected correctly: " + gameObject.name);
 
             // Play collection effect if available
             if (collectionEffectPrefab != null)
@@ -105,7 +164,7 @@ public class TrashItem : MonoBehaviour
                 Instantiate(collectionEffectPrefab, transform.position, Quaternion.identity);
             }
 
-            // Add score
+            // Add score for correct type
             if (GameManager.Instance != null)
             {
                 GameManager.Instance.CollectTrash();
@@ -122,17 +181,15 @@ public class TrashItem : MonoBehaviour
         }
     }
 
-    private void WrongType()
+    private void ApplyWrongTypePenalty()
     {
-        Debug.Log("Wrong truck type for this trash: " + gameObject.name);
+        // Apply penalty for trying to collect wrong type
+        Debug.Log("Wrong truck type for this trash - applying penalty: " + gameObject.name);
 
-        // Apply wrong type penalty
+        // Apply wrong type penalty ONCE
         if (GameManager.Instance != null)
         {
-            // Explicitly use the penalty amount from GameManager
-            int penalty = GameManager.Instance.wrongTypePenalty;
-            Debug.Log($"Applying wrong type penalty: -{penalty}");
-
+            // Apply the penalty (25 points)
             GameManager.Instance.ApplyWrongTypePenalty();
 
             // Show wrong type notification
@@ -141,6 +198,8 @@ public class TrashItem : MonoBehaviour
                 GameManager.Instance.uiManager.ShowWrongTypeMessage();
             }
         }
+
+        // The trash remains on the road, not collected
     }
 
     // This is called by the LevelManager when the trash passes below the player
@@ -150,10 +209,21 @@ public class TrashItem : MonoBehaviour
         {
             Debug.Log("[TrashItem] Trash missed: " + gameObject.name);
 
-            // Apply missed trash penalty
-            if (GameManager.Instance != null)
+            // Apply missed trash penalty ONLY if this was collectible by the current truck
+            if (GameManager.Instance != null && isCollectible && !penaltyApplied)
             {
+                Debug.Log("[TrashItem] Applying penalty for missing collectible trash: -25 points");
                 GameManager.Instance.MissTrash();
+            }
+            else
+            {
+                Debug.Log("[TrashItem] No penalty for missing non-collectible trash or already penalized trash");
+            }
+
+            // Notify level manager that this object is processed
+            if (levelManager != null && isMainObject)
+            {
+                levelManager.NotifyObjectProcessed(isMainObject);
             }
 
             // Deactivate the object

@@ -19,6 +19,9 @@ public class LevelManager : MonoBehaviour
     public int baseObjectCount = 10; // Level 1 starts with 10 objects
     public int additionalObjectsPerLevel = 5; // Each level adds 5 more objects
 
+    [Header("Level Completion")]
+    public float levelCompletionDelay = 3f;
+
     [Header("Debug")]
     public bool showDebugInfo = true;
     public bool forceNextLevel = false; // Set this to true in inspector to force next level
@@ -43,6 +46,10 @@ public class LevelManager : MonoBehaviour
 
     // Store the last non-side object position
     private float highestObjectY = -100f;
+
+    // Track if all objects have passed player
+    private bool allObjectsPassedPlayer = false;
+    private float allObjectsPassedTime = 0f;
 
     private void Awake()
     {
@@ -144,6 +151,8 @@ public class LevelManager : MonoBehaviour
         levelCompleting = false;
         levelCheckTimer = 0f;
         highestObjectY = -100f;
+        allObjectsPassedPlayer = false;
+        allObjectsPassedTime = 0f;
 
         // Clear any active objects
         ClearActiveObjects();
@@ -156,6 +165,44 @@ public class LevelManager : MonoBehaviour
         // Calculate trash vs obstacles ratio
         int trashCount = Mathf.RoundToInt(totalObjects * trashRatio);
         int obstacleCount = totalObjects - trashCount;
+
+        // Adjust trash distribution based on current truck type
+        Dictionary<string, float> trashTypeWeights = new Dictionary<string, float>
+        {
+            { "Paper", 0.25f },
+            { "Plastic", 0.25f },
+            { "Glass", 0.25f },
+            { "General", 0.25f }
+        };
+
+        // Boost the weight of the current truck type
+        if (GameManager.Instance != null)
+        {
+            switch (GameManager.Instance.currentTruckType)
+            {
+                case GameManager.TruckType.Paper:
+                    trashTypeWeights["Paper"] = 0.55f;
+                    trashTypeWeights["Plastic"] = 0.15f;
+                    trashTypeWeights["Glass"] = 0.15f;
+                    trashTypeWeights["General"] = 0.15f;
+                    break;
+                case GameManager.TruckType.Plastic:
+                    trashTypeWeights["Paper"] = 0.15f;
+                    trashTypeWeights["Plastic"] = 0.55f;
+                    trashTypeWeights["Glass"] = 0.15f;
+                    trashTypeWeights["General"] = 0.15f;
+                    break;
+                case GameManager.TruckType.Glass:
+                    trashTypeWeights["Paper"] = 0.15f;
+                    trashTypeWeights["Plastic"] = 0.15f;
+                    trashTypeWeights["Glass"] = 0.55f;
+                    trashTypeWeights["General"] = 0.15f;
+                    break;
+                default: // General
+                    // Keep the default balanced weights
+                    break;
+            }
+        }
 
         Debug.Log($"[LevelManager] Generating level {level} with {trashCount} trash items and {obstacleCount} obstacles");
 
@@ -240,7 +287,8 @@ public class LevelManager : MonoBehaviour
     {
         if (trashPrefabs != null && trashPrefabs.Length > 0)
         {
-            GameObject prefab = trashPrefabs[Random.Range(0, trashPrefabs.Length)];
+            // Select a trash prefab based on current truck type
+            GameObject prefab = SelectTrashPrefabByType();
             GameObject trash = GetPooledObject(pooledTrash, prefab);
 
             if (trash != null)
@@ -256,6 +304,7 @@ public class LevelManager : MonoBehaviour
 
                 // Set this flag to help with level completion tracking
                 trashItem.isMainObject = isMainObject;
+                trashItem.isCollected = false;
 
                 // Make sure it's tagged properly
                 trash.tag = "Trash";
@@ -282,6 +331,93 @@ public class LevelManager : MonoBehaviour
         }
     }
 
+    private GameObject SelectTrashPrefabByType()
+    {
+        // Default behavior: random selection if no GameManager or no prefabs
+        if (GameManager.Instance == null || trashPrefabs.Length == 0)
+        {
+            return trashPrefabs[Random.Range(0, trashPrefabs.Length)];
+        }
+
+        // Get current truck type
+        GameManager.TruckType currentType = GameManager.Instance.currentTruckType;
+
+        // List all available trash prefabs by type
+        List<GameObject> paperTrash = new List<GameObject>();
+        List<GameObject> plasticTrash = new List<GameObject>();
+        List<GameObject> glassTrash = new List<GameObject>();
+        List<GameObject> generalTrash = new List<GameObject>();
+
+        // Categorize trash prefabs
+        foreach (GameObject prefab in trashPrefabs)
+        {
+            if (prefab == null) continue;
+
+            TrashItem item = prefab.GetComponent<TrashItem>();
+            if (item != null)
+            {
+                if (item.isPaper) paperTrash.Add(prefab);
+                else if (item.isPlastic) plasticTrash.Add(prefab);
+                else if (item.isGlass) glassTrash.Add(prefab);
+                else if (item.isGeneral) generalTrash.Add(prefab);
+            }
+        }
+
+        // Debug information to verify categorization worked
+        if (showDebugInfo)
+        {
+            Debug.Log($"Found {paperTrash.Count} paper, {plasticTrash.Count} plastic, {glassTrash.Count} glass, {generalTrash.Count} general trash prefabs");
+        }
+
+        // Use high probability (75%) for matching type
+        float matchingTypeChance = 0.75f;
+
+        // Select trash based on current truck type with higher probability for matching type
+        switch (currentType)
+        {
+            case GameManager.TruckType.Paper:
+                if (paperTrash.Count > 0 && Random.value < matchingTypeChance)
+                    return paperTrash[Random.Range(0, paperTrash.Count)];
+                break;
+
+            case GameManager.TruckType.Plastic:
+                if (plasticTrash.Count > 0 && Random.value < matchingTypeChance)
+                    return plasticTrash[Random.Range(0, plasticTrash.Count)];
+                break;
+
+            case GameManager.TruckType.Glass:
+                if (glassTrash.Count > 0 && Random.value < matchingTypeChance)
+                    return glassTrash[Random.Range(0, glassTrash.Count)];
+                break;
+
+            case GameManager.TruckType.General:
+                // For general truck, distribute evenly among all types
+                int typeChoice = Random.Range(0, 4);
+                if (typeChoice == 0 && paperTrash.Count > 0)
+                    return paperTrash[Random.Range(0, paperTrash.Count)];
+                else if (typeChoice == 1 && plasticTrash.Count > 0)
+                    return plasticTrash[Random.Range(0, plasticTrash.Count)];
+                else if (typeChoice == 2 && glassTrash.Count > 0)
+                    return glassTrash[Random.Range(0, glassTrash.Count)];
+                else if (typeChoice == 3 && generalTrash.Count > 0)
+                    return generalTrash[Random.Range(0, generalTrash.Count)];
+                break;
+        }
+
+        // If we didn't select a type-specific trash, or for fallback,
+        // randomly choose any trash type
+        List<GameObject> allValidTrash = new List<GameObject>();
+        allValidTrash.AddRange(trashPrefabs);
+
+        if (allValidTrash.Count > 0)
+        {
+            return allValidTrash[Random.Range(0, allValidTrash.Count)];
+        }
+
+        // Fallback if something went wrong
+        return trashPrefabs[Random.Range(0, trashPrefabs.Length)];
+    }
+
     private void SpawnObstacleAt(float x, float y, bool isMainObject)
     {
         if (obstaclePrefabs != null && obstaclePrefabs.Length > 0)
@@ -293,32 +429,48 @@ public class LevelManager : MonoBehaviour
             {
                 obstacle.transform.position = new Vector3(x, y, 0);
 
-                // Make sure it has an ObstacleItem component
-                ObstacleItem obstacleItem = obstacle.GetComponent<ObstacleItem>();
-                if (obstacleItem == null)
+                // Check if this is a complex obstacle (Island)
+                IslandController islandController = obstacle.GetComponent<IslandController>();
+                if (islandController != null)
                 {
-                    obstacleItem = obstacle.AddComponent<ObstacleItem>();
-                }
+                    // This is a complex obstacle, set it up
+                    islandController.SetMainObjectParts(isMainObject);
 
-                // Set this flag to help with level completion tracking
-                obstacleItem.isMainObject = isMainObject;
+                    // Make sure the entire island is positioned correctly
+                    islandController.SetPosition(new Vector3(x, y, 0));
+                }
+                else
+                {
+                    // Regular obstacle, add the normal ObstacleItem component
+                    ObstacleItem obstacleItem = obstacle.GetComponent<ObstacleItem>();
+                    if (obstacleItem == null)
+                    {
+                        obstacleItem = obstacle.AddComponent<ObstacleItem>();
+                    }
+
+                    // Set this flag to help with level completion tracking
+                    obstacleItem.isMainObject = isMainObject;
+                }
 
                 // Make sure it's tagged properly
                 obstacle.tag = "Obstacle";
 
-                // Ensure collider is correctly set
-                BoxCollider2D collider = obstacle.GetComponent<BoxCollider2D>();
-                if (collider == null)
+                // Ensure collider is correctly set if not a complex obstacle
+                if (islandController == null)
                 {
-                    collider = obstacle.AddComponent<BoxCollider2D>();
-                }
-                collider.isTrigger = true;
+                    BoxCollider2D collider = obstacle.GetComponent<BoxCollider2D>();
+                    if (collider == null)
+                    {
+                        collider = obstacle.AddComponent<BoxCollider2D>();
+                    }
+                    collider.isTrigger = true;
 
-                // Set collider size from sprite if needed
-                SpriteRenderer sr = obstacle.GetComponent<SpriteRenderer>();
-                if (sr != null && (collider.size.x <= 0.001f || collider.size.y <= 0.001f))
-                {
-                    collider.size = sr.sprite.bounds.size;
+                    // Set collider size from sprite if needed
+                    SpriteRenderer sr = obstacle.GetComponent<SpriteRenderer>();
+                    if (sr != null && (collider.size.x <= 0.001f || collider.size.y <= 0.001f))
+                    {
+                        collider.size = sr.sprite.bounds.size;
+                    }
                 }
 
                 // Activate and track
@@ -417,6 +569,7 @@ public class LevelManager : MonoBehaviour
 
         List<GameObject> objectsToRemove = new List<GameObject>();
         int mainObjectsProcessed = 0;
+        bool foundActiveMainObject = false;
 
         // Cache player position for missed trash detection
         float playerY = playerTransform != null ? playerTransform.position.y : -5f;
@@ -428,8 +581,29 @@ public class LevelManager : MonoBehaviour
                 // Move object down
                 obj.transform.position += Vector3.down * speed * Time.deltaTime;
 
-                // Check if trash was missed (passed player position)
+                // Check if this is a main object and if it's above the player
+                bool isMainObject = false;
                 TrashItem trashItem = obj.GetComponent<TrashItem>();
+                if (trashItem != null)
+                {
+                    isMainObject = trashItem.isMainObject;
+                }
+                else
+                {
+                    ObstacleItem obstacleItem = obj.GetComponent<ObstacleItem>();
+                    if (obstacleItem != null)
+                    {
+                        isMainObject = obstacleItem.isMainObject;
+                    }
+                }
+
+                // Track if any main objects are still active and above the player
+                if (isMainObject && obj.transform.position.y > playerY)
+                {
+                    foundActiveMainObject = true;
+                }
+
+                // Check if trash was missed (passed player position)
                 if (trashItem != null && !trashItem.isCollected && obj.transform.position.y < playerY)
                 {
                     // Only count for main objects
@@ -448,22 +622,25 @@ public class LevelManager : MonoBehaviour
                 if (obj.transform.position.y < -10f)
                 {
                     // Count if it's a main object
-                    bool isMainObject = false;
+                    bool isMain = false;
 
                     if (trashItem != null)
                     {
-                        isMainObject = trashItem.isMainObject;
+                        isMain = trashItem.isMainObject;
                     }
                     else
                     {
                         ObstacleItem obstacleItem = obj.GetComponent<ObstacleItem>();
                         if (obstacleItem != null)
                         {
-                            isMainObject = obstacleItem.isMainObject;
+                            isMain = obstacleItem.isMainObject;
+
+                            // Notify obstacle that it was passed
+                            obstacleItem.ObstaclePassed();
                         }
                     }
 
-                    if (isMainObject)
+                    if (isMain)
                     {
                         mainObjectsProcessed++;
                         remainingMainObjects--;
@@ -481,13 +658,21 @@ public class LevelManager : MonoBehaviour
             activeObjects.Remove(obj);
         }
 
+        // Check if all main objects have passed the player
+        if (!foundActiveMainObject && !allObjectsPassedPlayer && remainingMainObjects <= 0)
+        {
+            allObjectsPassedPlayer = true;
+            allObjectsPassedTime = Time.time;
+            Debug.Log("[LevelManager] All main objects have passed the player. Starting level completion countdown.");
+        }
+
         // Debug info
         if (showDebugInfo && Time.frameCount % 60 == 0)
         {
             Debug.Log($"[LevelManager] Objects: {activeObjects.Count} active, {remainingMainObjects}/{totalMainObjects} main remaining");
         }
 
-        // Check if level is nearly complete
+        // Check if level is nearly complete - traditional method
         if (!levelCompleting && remainingMainObjects <= 0)
         {
             Debug.Log("[LevelManager] All main objects processed. Starting level completion countdown.");
@@ -509,6 +694,8 @@ public class LevelManager : MonoBehaviour
         activeObjects.Clear();
         remainingMainObjects = 0;
         totalMainObjects = 0;
+        allObjectsPassedPlayer = false;
+        allObjectsPassedTime = 0f;
     }
 
     public bool IsLevelComplete()
@@ -521,7 +708,14 @@ public class LevelManager : MonoBehaviour
             return true;
         }
 
-        // Normal level completion check with delay
+        // New method: all objects passed player
+        if (allObjectsPassedPlayer && Time.time - allObjectsPassedTime >= levelCompletionDelay)
+        {
+            Debug.Log("[LevelManager] Level complete! All objects have passed the player.");
+            return true;
+        }
+
+        // Backup method: check remaining objects
         if (levelCompleting)
         {
             levelCheckTimer += Time.deltaTime;
@@ -566,8 +760,10 @@ public class LevelManager : MonoBehaviour
             // Check if level is complete
             if (IsLevelComplete())
             {
-                // Reset flag
+                // Reset flags
                 levelCompleting = false;
+                allObjectsPassedPlayer = false;
+                allObjectsPassedTime = 0f;
 
                 // Notify game manager
                 GameManager.Instance.CheckLevelCompletion();
@@ -580,6 +776,4 @@ public class LevelManager : MonoBehaviour
             forceNextLevel = true;
         }
     }
-
-  
 }

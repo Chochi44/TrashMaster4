@@ -27,7 +27,7 @@ public class ObstacleItem : MonoBehaviour
 
         // Set appropriate size if needed
         SpriteRenderer spriteRenderer = GetComponent<SpriteRenderer>();
-        if (spriteRenderer != null && myCollider.size.x <= 0.001f)
+        if (spriteRenderer != null && (myCollider.size.x <= 0.001f || myCollider.size.y <= 0.001f))
         {
             myCollider.size = spriteRenderer.bounds.size;
         }
@@ -44,8 +44,6 @@ public class ObstacleItem : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        Debug.Log("[ObstacleItem] Obstacle collision detected with: " + other.gameObject.name);
-
         if (other.CompareTag("Player"))
         {
             TriggerGameOver();
@@ -83,8 +81,45 @@ public class ObstacleItem : MonoBehaviour
                 levelManager.NotifyObjectProcessed(isMainObject);
             }
 
+            // Handle complex obstacle - deactivate all linked parts
+            if (isComplexObstacle && linkedParts != null && linkedParts.Length > 0)
+            {
+                foreach (ObstacleItem part in linkedParts)
+                {
+                    if (part != null && part != this)
+                    {
+                        // Mark as processed
+                        if (part.isMainObject && levelManager != null)
+                        {
+                            levelManager.NotifyObjectProcessed(true);
+                        }
+                    }
+                }
+            }
+
             // End the game
             GameManager.Instance.GameOver();
+        }
+    }
+
+    // This is called when the obstacle is passed without collision
+    public void ObstaclePassed()
+    {
+        if (levelManager != null && isMainObject)
+        {
+            levelManager.NotifyObjectProcessed(isMainObject);
+        }
+
+        // Handle complex obstacle - notify for all linked parts too
+        if (isComplexObstacle && linkedParts != null && linkedParts.Length > 0)
+        {
+            foreach (ObstacleItem part in linkedParts)
+            {
+                if (part != null && part != this && part.isMainObject)
+                {
+                    levelManager.NotifyObjectProcessed(true);
+                }
+            }
         }
     }
 }

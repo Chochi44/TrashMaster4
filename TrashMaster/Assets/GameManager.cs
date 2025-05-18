@@ -159,13 +159,24 @@ public class GameManager : MonoBehaviour
 
     public void MissTrash()
     {
-        score -= penaltyForMissedTrash;
+        // ALWAYS use exactly the penaltyForMissedTrash value (25)
+        int penalty = penaltyForMissedTrash;
 
+        // For debugging
+        int originalScore = score;
+
+        // Apply EXACTLY one penalty
+        score -= penalty;
+
+        Debug.Log($"Missed trash penalty applied: Score changed from {originalScore} to {score} (penalty: {penalty})");
+
+        // Play sound effect
         if (_audioManager != null)
         {
             _audioManager.PlaySound("missed");
         }
 
+        // Update UI
         if (_uiManager != null)
         {
             _uiManager.UpdateScoreText(score);
@@ -304,11 +315,13 @@ public class GameManager : MonoBehaviour
 
     public void ApplyWrongTypePenalty()
     {
-        // Add explicit debug to understand what's happening
-        int originalScore = score;
+        // ALWAYS use exactly the wrongTypePenalty value (25)
         int penalty = wrongTypePenalty;
 
-        // Deduct penalty from score
+        // For debugging
+        int originalScore = score;
+
+        // Apply EXACTLY one penalty
         score -= penalty;
 
         Debug.Log($"Wrong type penalty applied: Score changed from {originalScore} to {score} (penalty: {penalty})");

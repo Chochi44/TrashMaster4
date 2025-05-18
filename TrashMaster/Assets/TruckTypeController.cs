@@ -35,6 +35,10 @@ public class TruckTypeController : MonoBehaviour
 
     public void SetTruckType(GameManager.TruckType type)
     {
+        // Check if this is actually a change
+        bool isTypeChange = (currentType != type);
+
+        // Set the new type
         currentType = type;
         Debug.Log("Truck type set to: " + type);
 
@@ -86,6 +90,34 @@ public class TruckTypeController : MonoBehaviour
             return true;
 
         return false;
+    }
+
+    // Play collection effect
+    public void PlayCollectionEffect(Vector3 position, GameManager.TruckType trashType)
+    {
+        if (collectionEffect != null)
+        {
+            // Set color based on trash type
+            var main = collectionEffect.main;
+            switch (trashType)
+            {
+                case GameManager.TruckType.General:
+                    main.startColor = generalParticleColor;
+                    break;
+                case GameManager.TruckType.Paper:
+                    main.startColor = paperParticleColor;
+                    break;
+                case GameManager.TruckType.Plastic:
+                    main.startColor = plasticParticleColor;
+                    break;
+                case GameManager.TruckType.Glass:
+                    main.startColor = glassParticleColor;
+                    break;
+            }
+
+            // Create effect at position
+            Instantiate(collectionEffect, position, Quaternion.identity);
+        }
     }
 
     // Update check - set truck type if it changes in GameManager
