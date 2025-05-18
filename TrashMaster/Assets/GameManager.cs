@@ -191,15 +191,19 @@ public class GameManager : MonoBehaviour
             LaneManager.Instance.UpdateForLevel(currentLevel);
         }
 
-        // Change truck type based on level
+        // Determine new truck type
+        TruckType newTruckType;
         if (currentLevel % 4 == 1)
-            SetTruckType(TruckType.General);
+            newTruckType = TruckType.General;
         else if (currentLevel % 4 == 2)
-            SetTruckType(TruckType.Paper);
+            newTruckType = TruckType.Paper;
         else if (currentLevel % 4 == 3)
-            SetTruckType(TruckType.Plastic);
+            newTruckType = TruckType.Plastic;
         else
-            SetTruckType(TruckType.Glass);
+            newTruckType = TruckType.Glass;
+
+        // Set truck type
+        SetTruckType(newTruckType);
 
         // Notify player controller about level change
         if (_player != null)
@@ -212,9 +216,19 @@ public class GameManager : MonoBehaviour
             _audioManager.PlaySound("levelup");
         }
 
+        // Option 1: Show separate notifications
+        /*
         if (_uiManager != null)
         {
             _uiManager.ShowLevelUpText(currentLevel);
+            _uiManager.UpdateLevelText(currentLevel);
+        }
+        */
+
+        // Option 2: Show combined notification
+        if (_uiManager != null)
+        {
+            _uiManager.ShowLevelUpAndTruckType(currentLevel, currentTruckType);
             _uiManager.UpdateLevelText(currentLevel);
         }
 

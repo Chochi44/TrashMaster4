@@ -99,7 +99,7 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    // New methods for pause screen
+    // Methods for pause screen
     public void ShowPauseScreen()
     {
         if (pauseScreen != null)
@@ -167,8 +167,11 @@ public class UIManager : MonoBehaviour
     {
         // Set text and position
         levelUpText.text = "LEVEL " + level;
-        levelUpText.rectTransform.anchoredPosition = new Vector2(0, -100f);
+        levelUpText.rectTransform.anchoredPosition = new Vector2(0, 0); // Center of screen
         levelUpText.gameObject.SetActive(true);
+
+        // Store initial position
+        Vector2 startPosition = levelUpText.rectTransform.anchoredPosition;
 
         // Animate up
         float startTime = Time.time;
@@ -192,6 +195,9 @@ public class UIManager : MonoBehaviour
         // Hide text and reset color
         levelUpText.gameObject.SetActive(false);
         levelUpText.color = new Color(levelUpText.color.r, levelUpText.color.g, levelUpText.color.b, 1f);
+
+        // Reset position for next time
+        levelUpText.rectTransform.anchoredPosition = startPosition;
     }
 
     private IEnumerator AnimateTruckTypeText(GameManager.TruckType truckType)
@@ -223,16 +229,51 @@ public class UIManager : MonoBehaviour
         // Set text and position
         truckTypeChangeText.text = typeText;
         truckTypeChangeText.color = textColor;
-        // Position below level up text
-        truckTypeChangeText.rectTransform.anchoredPosition = new Vector2(0, -180f);
+
+        // Center the text horizontally and position it vertically
+        truckTypeChangeText.rectTransform.anchoredPosition = new Vector2(0, 0); // Center of screen
+
+        // Set width to match the entire road width (all gray lanes combined)
+        if (LaneManager.Instance != null && Camera.main != null)
+        {
+            // Get total lane count and screen width
+            int totalLanes = LaneManager.Instance.GetTotalLaneCount();
+            int centerLanes = LaneManager.Instance.GetCenterLaneCount();
+            float screenWidth = Camera.main.orthographicSize * 2 * Camera.main.aspect;
+
+            // Get side lane width ratio from Lane Manager
+            float sideLaneWidthRatio = LaneManager.Instance.sideLaneWidthRatio;
+
+            // Calculate the width of all center lanes combined (the gray road area)
+            float centerLanesTotalWidth = screenWidth - (2 * screenWidth * sideLaneWidthRatio);
+
+            // Set the text width to match the center lanes width
+            truckTypeChangeText.rectTransform.sizeDelta = new Vector2(centerLanesTotalWidth, truckTypeChangeText.rectTransform.sizeDelta.y);
+
+            Debug.Log($"Screen width: {screenWidth}, Center lanes width: {centerLanesTotalWidth}");
+        }
+        else
+        {
+            // Fallback if LaneManager isn't available
+            float screenWidth = Camera.main.orthographicSize * 2 * Camera.main.aspect;
+            float roadWidth = screenWidth * 0.7f; // Assume road takes 70% of screen width
+            truckTypeChangeText.rectTransform.sizeDelta = new Vector2(roadWidth, truckTypeChangeText.rectTransform.sizeDelta.y);
+        }
+
         truckTypeChangeText.gameObject.SetActive(true);
 
-        // Animate
+        // Store initial position
+        Vector2 startPosition = truckTypeChangeText.rectTransform.anchoredPosition;
+
+        // Animate in the same way as levelUpText
         float startTime = Time.time;
-        float duration = truckTypeTextDuration;
+        float duration = levelUpTextDuration; // Use the same duration as level up text
 
         while (Time.time - startTime < duration)
         {
+            // Move text upward at the same speed as levelUpText
+            truckTypeChangeText.rectTransform.anchoredPosition += Vector2.up * levelUpTextSpeed * Time.deltaTime;
+
             // Fade out near the end
             if (Time.time - startTime > duration * 0.7f)
             {
@@ -246,5 +287,36 @@ public class UIManager : MonoBehaviour
         // Hide text and reset color
         truckTypeChangeText.gameObject.SetActive(false);
         truckTypeChangeText.color = new Color(textColor.r, textColor.g, textColor.b, 1f);
+
+        // Reset position for next time
+        truckTypeChangeText.rectTransform.anchoredPosition = startPosition;
+    }
+
+    // Optional: Combined method to show both texts with coordinated positioning
+    public void ShowLevelUpAndTruckType(int level, GameManager.TruckType truckType)
+    {
+        // Cancel any existing animations
+        if (levelUpTextCoroutine != null)
+        {
+            StopCoroutine(levelUpTextCoroutine);
+        }
+
+        if (truckTypeTextCoroutine != null)
+        {
+            StopCoroutine(truckTypeTextCoroutine);
+        }
+
+        // Position level text above and truck type text below
+        if (levelUpText != null)
+        {
+            levelUpText.rectTransform.anchoredPosition = new Vector2(0, 50); // Above center
+            levelUpTextCoroutine = StartCoroutine(AnimateLevelUpText(level));
+        }
+
+        if (truckTypeChangeText != null)
+        {
+            truckTypeChangeText.rectTransform.anchoredPosition = new Vector2(0, -50); // Below center
+            truckTypeTextCoroutine = StartCoroutine(AnimateTruckTypeText(truckType));
+        }
     }
 }
