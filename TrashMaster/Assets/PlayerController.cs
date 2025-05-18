@@ -1,4 +1,6 @@
+using System.Buffers.Text;
 using UnityEngine;
+using static LaneManager;
 
 public class PlayerController : MonoBehaviour
 {
@@ -14,11 +16,28 @@ public class PlayerController : MonoBehaviour
     private bool isMoving = false;
     private GameManager gameManager;
     private LaneManager laneManager;
+    private BoxCollider2D playerCollider;
 
     // Dynamic lane boundaries
     private int minPlayableLane = 1;
     private int maxPlayableLane = 5;
     private int totalLanes = 7;
+
+    private void Awake()
+    {
+        // Make sure we have a collider
+        playerCollider = GetComponent<BoxCollider2D>();
+        if (playerCollider == null)
+        {
+            playerCollider = gameObject.AddComponent<BoxCollider2D>();
+        }
+
+        // Set it as a trigger
+        playerCollider.isTrigger = true;
+
+        // Tag the player
+        gameObject.tag = "Player";
+    }
 
     private void Start()
     {
@@ -36,6 +55,23 @@ public class PlayerController : MonoBehaviour
         {
             truckRenderer.sortingOrder = 10;
             truckRenderer.enabled = true;
+        }
+
+        // Ensure tag is set
+        gameObject.tag = "Player";
+
+        // Ensure collider is set properly
+        BoxCollider2D collider = GetComponent<BoxCollider2D>();
+        if (collider == null)
+        {
+            collider = gameObject.AddComponent<BoxCollider2D>();
+        }
+        collider.isTrigger = true;
+
+        // Set collider size based on sprite if needed
+        if (truckRenderer != null && (collider.size.x <= 0.001f || collider.size.y <= 0.001f))
+        {
+            collider.size = truckRenderer.bounds.size * 0.8f; // 80% of sprite size for better collision
         }
 
         // Subscribe to lane changes
@@ -70,6 +106,18 @@ public class PlayerController : MonoBehaviour
 
             // Move towards target position
             MoveToTargetPosition();
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        Debug.Log("Player collided with: " + other.gameObject.name + " (Tag: " + other.tag + ")");
+
+        // Handle collisions with obstacles
+        if (other.CompareTag("Obstacle") && gameManager != null && !gameManager.gameOver)
+        {
+            Debug.Log("Player hit obstacle: " + other.gameObject.name);
+            gameManager.GameOver();
         }
     }
 
@@ -186,7 +234,7 @@ public class PlayerController : MonoBehaviour
         {
             // Fallback calculation
             float laneCenter = (currentLane * laneWidth) - ((totalLanes * laneWidth) / 2) + (laneWidth / 2);
-            float yPosition = Camera.main.orthographicSize * -0.5f; // Position at bottom quarter of screen
+            float yPosition = Camera.main ? (Camera.main.orthographicSize * -0.5f) : -4f; // Position at bottom quarter of screen
             transform.position = new Vector3(laneCenter, yPosition, 0);
         }
 
@@ -216,41 +264,11 @@ public class PlayerController : MonoBehaviour
                 truckRenderer.sprite = gameManager.glassTruckSprite;
                 break;
         }
-    }
 
-    private void OnTriggerEnter2D(Collider2D other)
-    {
-        if (gameManager == null) return;
-
-        if (other.CompareTag("Obstacle"))
+        // Update collider size to match new sprite
+        if (playerCollider != null && truckRenderer != null)
         {
-            gameManager.GameOver();
-        }
-        else if (other.CompareTag("Trash"))
-        {
-            TrashItem trash = other.GetComponent<TrashItem>();
-            if (trash == null) return;
-
-            // Check if the player can collect this type of trash
-            bool canCollect = true;
-            if (gameManager.currentLevel > 1)
-            {
-                GameManager.TruckType truckType = gameManager.currentTruckType;
-
-                // Only collect trash of the same type as the truck (after level 1)
-                if (truckType == GameManager.TruckType.Paper && !trash.isPaper)
-                    canCollect = false;
-                else if (truckType == GameManager.TruckType.Plastic && !trash.isPlastic)
-                    canCollect = false;
-                else if (truckType == GameManager.TruckType.Glass && !trash.isGlass)
-                    canCollect = false;
-            }
-
-            if (canCollect)
-            {
-                gameManager.CollectTrash();
-                trash.Collect();
-            }
+            playerCollider.size = truckRenderer.bounds.size * 0.8f;
         }
     }
 

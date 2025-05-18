@@ -176,6 +176,22 @@ public class GameManager : MonoBehaviour
     {
         if (_levelManager != null && _levelManager.IsLevelComplete())
         {
+            Debug.Log("[GameManager] Level completion confirmed from LevelManager!");
+
+            // Call this to proceed to next level
+            LevelUp();
+
+            // Add a backup trigger for good measure
+            Invoke("EnsureLevelUp", 1.0f);
+        }
+    }
+
+    private void EnsureLevelUp()
+    {
+        // This is a backup in case the first call doesn't take
+        if (_levelManager.IsLevelComplete())
+        {
+            Debug.Log("[GameManager] Using backup level completion trigger!");
             LevelUp();
         }
     }
@@ -184,6 +200,8 @@ public class GameManager : MonoBehaviour
     {
         currentLevel++;
         currentSpeed += speedIncreasePerLevel;
+
+        Debug.Log("Leveling up to level " + currentLevel + " with speed " + currentSpeed);
 
         // Update lanes for new level if LaneManager exists
         if (LaneManager.Instance != null)
@@ -277,6 +295,34 @@ public class GameManager : MonoBehaviour
         if (_uiManager != null)
         {
             _uiManager.ShowTitleScreen();
+        }
+    }
+
+
+    [Header("Penalties")]
+    public int wrongTypePenalty = 25; // Set to 25 points
+
+    public void ApplyWrongTypePenalty()
+    {
+        // Add explicit debug to understand what's happening
+        int originalScore = score;
+        int penalty = wrongTypePenalty;
+
+        // Deduct penalty from score
+        score -= penalty;
+
+        Debug.Log($"Wrong type penalty applied: Score changed from {originalScore} to {score} (penalty: {penalty})");
+
+        // Play sound effect
+        if (_audioManager != null)
+        {
+            _audioManager.PlaySound("missed");
+        }
+
+        // Update UI
+        if (_uiManager != null)
+        {
+            _uiManager.UpdateScoreText(score);
         }
     }
 

@@ -8,50 +8,81 @@ public class LevelManager : MonoBehaviour
     public GameObject[] trashPrefabs;
     public GameObject[] obstaclePrefabs;
     public GameObject[] sideObstaclePrefabs;
-    public GameObject islandPrefabTop;
-    public GameObject islandPrefabMiddle;
-    public GameObject islandPrefabBottom;
 
     [Header("Spawn Settings")]
     public float minObstacleSpacing = 2f;
     public float maxObstacleSpacing = 5f;
     public float sideObstacleSpacing = 3f;
-    public float levelLength = 100f; // Total distance to travel in a level
 
-    [Header("Lane Settings")]
-    public int totalLanes = 7;
-    public float laneWidth = 60f;
+    [Header("Level Settings")]
+    public float trashRatio = 0.7f; // 70% trash, 30% obstacles
+    public int baseObjectCount = 10; // Level 1 starts with 10 objects
+    public int additionalObjectsPerLevel = 5; // Each level adds 5 more objects
+
+    [Header("Debug")]
+    public bool showDebugInfo = true;
+    public bool forceNextLevel = false; // Set this to true in inspector to force next level
 
     [Header("References")]
     public Transform objectPoolParent;
+    public Transform playerTransform;
 
     // Object pools
-    private List<GameObject> activeObstacles = new List<GameObject>();
+    private List<GameObject> activeObjects = new List<GameObject>();
     private List<GameObject> pooledTrash = new List<GameObject>();
     private List<GameObject> pooledObstacles = new List<GameObject>();
     private List<GameObject> pooledSideObstacles = new List<GameObject>();
-    private List<GameObject> pooledIslandTop = new List<GameObject>();
-    private List<GameObject> pooledIslandMiddle = new List<GameObject>();
-    private List<GameObject> pooledIslandBottom = new List<GameObject>();
 
-    // Spawn tracking
-    private float totalSpawnedDistance = 0f;
+    // Level tracking
+    private int totalMainObjects = 0;
+    private int remainingMainObjects = 0;
+    private float maxObjectY = 0f; // Track the highest Y position of any spawned object
+    private bool levelCompleting = false;
+    private float levelCheckTimer = 0f;
+    private float levelCheckDelay = 3f;
+
+    // Store the last non-side object position
+    private float highestObjectY = -100f;
 
     private void Awake()
     {
-        // Only initialize local components, not accessing GameManager
+        // Create pool parent if needed
+        if (objectPoolParent == null)
+        {
+            GameObject poolParent = new GameObject("ObjectPool");
+            objectPoolParent = poolParent.transform;
+        }
+
+        // Initialize object pools
         InitializePools();
     }
 
-    // Access GameManager in Start instead of Awake
     private void Start()
     {
-        // Safe to access GameManager here
+        // Find player if not assigned
+        if (playerTransform == null)
+        {
+            PlayerController player = FindObjectOfType<PlayerController>();
+            if (player != null)
+            {
+                playerTransform = player.transform;
+            }
+        }
     }
 
     private void InitializePools()
     {
         // Pre-populate pools with some objects
+        if (trashPrefabs == null || trashPrefabs.Length == 0)
+        {
+            Debug.LogError("No trash prefabs assigned to LevelManager!");
+        }
+
+        if (obstaclePrefabs == null || obstaclePrefabs.Length == 0)
+        {
+            Debug.LogError("No obstacle prefabs assigned to LevelManager!");
+        }
+
         for (int i = 0; i < 20; i++)
         {
             if (trashPrefabs != null && trashPrefabs.Length > 0)
@@ -68,35 +99,27 @@ public class LevelManager : MonoBehaviour
             {
                 CreatePooledObject(sideObstaclePrefabs[Random.Range(0, sideObstaclePrefabs.Length)], pooledSideObstacles);
             }
-
-            if (islandPrefabTop != null)
-            {
-                CreatePooledObject(islandPrefabTop, pooledIslandTop);
-            }
-
-            if (islandPrefabMiddle != null)
-            {
-                CreatePooledObject(islandPrefabMiddle, pooledIslandMiddle);
-            }
-
-            if (islandPrefabBottom != null)
-            {
-                CreatePooledObject(islandPrefabBottom, pooledIslandBottom);
-            }
         }
     }
 
     private GameObject CreatePooledObject(GameObject prefab, List<GameObject> pool)
     {
-        if (prefab == null || objectPoolParent == null)
+        if (prefab == null)
         {
-            Debug.LogWarning("Missing prefab or objectPoolParent for pooling");
+            Debug.LogWarning("Null prefab passed to CreatePooledObject");
+            return null;
+        }
+
+        if (objectPoolParent == null)
+        {
+            Debug.LogWarning("No objectPoolParent for pooling");
             return null;
         }
 
         GameObject obj = Instantiate(prefab, objectPoolParent);
         obj.SetActive(false);
         pool.Add(obj);
+
         return obj;
     }
 
@@ -117,88 +140,103 @@ public class LevelManager : MonoBehaviour
 
     public void GenerateLevel(int level)
     {
-        // Clear any active obstacles
-        ClearActiveObstacles();
+        // Reset level completion flags
+        levelCompleting = false;
+        levelCheckTimer = 0f;
+        highestObjectY = -100f;
 
-        // Reset spawn tracking
-        totalSpawnedDistance = 0f;
+        // Clear any active objects
+        ClearActiveObjects();
 
-        // Generate main lane obstacles
-        int obstaclesPerLevel = level * 5;
-        float spawnY = 10f; // Start spawning off-screen
+        // Calculate total objects based on level
+        int totalObjects = baseObjectCount + (level - 1) * additionalObjectsPerLevel;
+        totalMainObjects = totalObjects;
+        remainingMainObjects = totalObjects;
 
-        for (int i = 0; i < obstaclesPerLevel; i++)
+        // Calculate trash vs obstacles ratio
+        int trashCount = Mathf.RoundToInt(totalObjects * trashRatio);
+        int obstacleCount = totalObjects - trashCount;
+
+        Debug.Log($"[LevelManager] Generating level {level} with {trashCount} trash items and {obstacleCount} obstacles");
+
+        // Get the total lane count (excluding side lanes)
+        int totalLanes = 5; // Default
+        if (LaneManager.Instance != null)
         {
-            // Randomly select lane between 1 and 5 (excluding side lanes 0 and 6)
-            int lane = Random.Range(1, totalLanes - 1);
+            totalLanes = LaneManager.Instance.GetCenterLaneCount();
+        }
 
-            // Spawn regular obstacle or trash
-            if (Random.value < 0.3f)
+        // Start spawning from outside the visible screen
+        float spawnY = 10f;
+        maxObjectY = spawnY;
+
+        // List to track where we'll spawn trash and obstacles
+        List<Vector2> mainPositions = new List<Vector2>();
+
+        // Generate main lane positions
+        for (int i = 0; i < totalObjects; i++)
+        {
+            // Randomly select lane (excluding side lanes)
+            int lane = Random.Range(1, totalLanes + 1);
+
+            // Get lane position
+            float xPos = 0;
+            if (LaneManager.Instance != null)
             {
-                SpawnObstacle(lane, spawnY);
+                xPos = LaneManager.Instance.GetLanePosition(lane).x;
             }
             else
             {
-                SpawnTrash(lane, spawnY);
+                xPos = (lane - totalLanes / 2) * 1.5f;
             }
 
-            // Increase spawn distance
+            mainPositions.Add(new Vector2(xPos, spawnY));
+
+            // Track highest Y position
+            if (spawnY > highestObjectY)
+            {
+                highestObjectY = spawnY;
+            }
+
+            // Increase spawn distance for next object
             float spacing = Random.Range(minObstacleSpacing, maxObstacleSpacing);
             spawnY += spacing;
-            totalSpawnedDistance += spacing;
+            maxObjectY = Mathf.Max(maxObjectY, spawnY);
+        }
 
-            // Increase difficulty at higher levels by adding more obstacles in parallel
-            if (level > 2 && Random.value < 0.5f)
-            {
-                int parallelLane = Random.Range(1, totalLanes - 1);
-                if (parallelLane != lane)
-                {
-                    if (Random.value < 0.3f)
-                    {
-                        SpawnObstacle(parallelLane, spawnY - spacing / 2);
-                    }
-                    else
-                    {
-                        SpawnTrash(parallelLane, spawnY - spacing / 2);
-                    }
-                }
+        // Shuffle the positions
+        for (int i = 0; i < mainPositions.Count; i++)
+        {
+            int randomIndex = Random.Range(i, mainPositions.Count);
+            Vector2 temp = mainPositions[i];
+            mainPositions[i] = mainPositions[randomIndex];
+            mainPositions[randomIndex] = temp;
+        }
 
-                // Add even more obstacles at level 5+
-                if (level > 4 && Random.value < 0.3f)
-                {
-                    int thirdLane = Random.Range(1, totalLanes - 1);
-                    if (thirdLane != lane && thirdLane != parallelLane)
-                    {
-                        if (Random.value < 0.3f)
-                        {
-                            SpawnObstacle(thirdLane, spawnY - spacing * 0.75f);
-                        }
-                        else
-                        {
-                            SpawnTrash(thirdLane, spawnY - spacing * 0.75f);
-                        }
-                    }
-                }
-            }
+        // Spawn trash in the first trashCount positions
+        for (int i = 0; i < trashCount && i < mainPositions.Count; i++)
+        {
+            SpawnTrashAt(mainPositions[i].x, mainPositions[i].y, true);
+        }
 
-            // Small chance to spawn a complex island obstacle
-            if (Random.value < 0.1f)
-            {
-                int islandLane = Random.Range(1, totalLanes - 1);
-                SpawnIsland(islandLane, spawnY + spacing);
-                spawnY += spacing * 2;
-                totalSpawnedDistance += spacing * 2;
-            }
+        // Spawn obstacles in the remaining positions
+        for (int i = trashCount; i < mainPositions.Count; i++)
+        {
+            SpawnObstacleAt(mainPositions[i].x, mainPositions[i].y, true);
         }
 
         // Generate side obstacles - left side (lane 0)
-        GenerateSideObstacles(0, levelLength);
+        GenerateSideObstacles(0, spawnY);
 
-        // Generate side obstacles - right side (lane 6 in a 7-lane setup)
-        GenerateSideObstacles(totalLanes - 1, levelLength);
+        // Generate side obstacles - right side
+        int rightSideLane = (LaneManager.Instance != null) ?
+            LaneManager.Instance.GetTotalLaneCount() - 1 : 6;
+        GenerateSideObstacles(rightSideLane, spawnY);
+
+        Debug.Log($"[LevelManager] Level {level} generated with {activeObjects.Count} total objects. Tracking {remainingMainObjects} main objects for completion.");
     }
 
-    private void SpawnTrash(int lane, float spawnY)
+    private void SpawnTrashAt(float x, float y, bool isMainObject)
     {
         if (trashPrefabs != null && trashPrefabs.Length > 0)
         {
@@ -207,17 +245,44 @@ public class LevelManager : MonoBehaviour
 
             if (trash != null)
             {
-                // Position at lane center
-                float laneCenter = (lane * laneWidth) + (laneWidth / 2) - (totalLanes * laneWidth / 2);
-                trash.transform.position = new Vector3(laneCenter, spawnY, 0);
+                trash.transform.position = new Vector3(x, y, 0);
 
+                // Make sure it has a TrashItem component
+                TrashItem trashItem = trash.GetComponent<TrashItem>();
+                if (trashItem == null)
+                {
+                    trashItem = trash.AddComponent<TrashItem>();
+                }
+
+                // Set this flag to help with level completion tracking
+                trashItem.isMainObject = isMainObject;
+
+                // Make sure it's tagged properly
+                trash.tag = "Trash";
+
+                // Ensure collider is correctly set
+                BoxCollider2D collider = trash.GetComponent<BoxCollider2D>();
+                if (collider == null)
+                {
+                    collider = trash.AddComponent<BoxCollider2D>();
+                }
+                collider.isTrigger = true;
+
+                // Set collider size from sprite if needed
+                SpriteRenderer sr = trash.GetComponent<SpriteRenderer>();
+                if (sr != null && (collider.size.x <= 0.001f || collider.size.y <= 0.001f))
+                {
+                    collider.size = sr.sprite.bounds.size;
+                }
+
+                // Activate and track
                 trash.SetActive(true);
-                activeObstacles.Add(trash);
+                activeObjects.Add(trash);
             }
         }
     }
 
-    private void SpawnObstacle(int lane, float spawnY)
+    private void SpawnObstacleAt(float x, float y, bool isMainObject)
     {
         if (obstaclePrefabs != null && obstaclePrefabs.Length > 0)
         {
@@ -226,65 +291,48 @@ public class LevelManager : MonoBehaviour
 
             if (obstacle != null)
             {
-                // Position at lane center
-                float laneCenter = (lane * laneWidth) + (laneWidth / 2) - (totalLanes * laneWidth / 2);
-                obstacle.transform.position = new Vector3(laneCenter, spawnY, 0);
+                obstacle.transform.position = new Vector3(x, y, 0);
 
+                // Make sure it has an ObstacleItem component
+                ObstacleItem obstacleItem = obstacle.GetComponent<ObstacleItem>();
+                if (obstacleItem == null)
+                {
+                    obstacleItem = obstacle.AddComponent<ObstacleItem>();
+                }
+
+                // Set this flag to help with level completion tracking
+                obstacleItem.isMainObject = isMainObject;
+
+                // Make sure it's tagged properly
+                obstacle.tag = "Obstacle";
+
+                // Ensure collider is correctly set
+                BoxCollider2D collider = obstacle.GetComponent<BoxCollider2D>();
+                if (collider == null)
+                {
+                    collider = obstacle.AddComponent<BoxCollider2D>();
+                }
+                collider.isTrigger = true;
+
+                // Set collider size from sprite if needed
+                SpriteRenderer sr = obstacle.GetComponent<SpriteRenderer>();
+                if (sr != null && (collider.size.x <= 0.001f || collider.size.y <= 0.001f))
+                {
+                    collider.size = sr.sprite.bounds.size;
+                }
+
+                // Activate and track
                 obstacle.SetActive(true);
-                activeObstacles.Add(obstacle);
+                activeObjects.Add(obstacle);
             }
         }
     }
 
-    private void SpawnIsland(int lane, float spawnY)
-    {
-        if (islandPrefabTop != null && islandPrefabMiddle != null && islandPrefabBottom != null)
-        {
-            // Get island parts from pools
-            GameObject top = GetPooledObject(pooledIslandTop, islandPrefabTop);
-
-            if (top == null) return;
-
-            int middleSectionCount = Random.Range(1, 4); // 1-3 middle sections
-            GameObject[] middle = new GameObject[middleSectionCount];
-            GameObject bottom = GetPooledObject(pooledIslandBottom, islandPrefabBottom);
-
-            if (bottom == null) return;
-
-            float laneCenter = (lane * laneWidth) + (laneWidth / 2) - (totalLanes * laneWidth / 2);
-            float currentY = spawnY;
-
-            // Position top part
-            top.transform.position = new Vector3(laneCenter, currentY, 0);
-            top.SetActive(true);
-            activeObstacles.Add(top);
-            currentY += top.GetComponent<SpriteRenderer>()?.bounds.size.y ?? 1f;
-
-            // Position middle parts
-            for (int i = 0; i < middle.Length; i++)
-            {
-                middle[i] = GetPooledObject(pooledIslandMiddle, islandPrefabMiddle);
-
-                if (middle[i] == null) continue;
-
-                middle[i].transform.position = new Vector3(laneCenter, currentY, 0);
-                middle[i].SetActive(true);
-                activeObstacles.Add(middle[i]);
-                currentY += middle[i].GetComponent<SpriteRenderer>()?.bounds.size.y ?? 1f;
-            }
-
-            // Position bottom part
-            bottom.transform.position = new Vector3(laneCenter, currentY, 0);
-            bottom.SetActive(true);
-            activeObstacles.Add(bottom);
-        }
-    }
-
-    private void GenerateSideObstacles(int lane, float levelLength)
+    private void GenerateSideObstacles(int lane, float maxSpawnY)
     {
         float spawnY = 0f;
 
-        while (spawnY < levelLength)
+        while (spawnY < maxSpawnY + 10f) // Extra for offscreen content
         {
             if (sideObstaclePrefabs != null && sideObstaclePrefabs.Length > 0)
             {
@@ -293,15 +341,62 @@ public class LevelManager : MonoBehaviour
 
                 if (obstacle != null)
                 {
-                    float laneCenter = (lane * laneWidth) + (laneWidth / 2) - (totalLanes * laneWidth / 2);
-                    obstacle.transform.position = new Vector3(laneCenter, spawnY, 0);
+                    // Get lane position
+                    float xPos = 0;
+                    if (LaneManager.Instance != null)
+                    {
+                        xPos = LaneManager.Instance.GetLanePosition(lane).x;
+                    }
+                    else
+                    {
+                        xPos = (lane == 0) ? -5f : 5f;
+                    }
 
+                    obstacle.transform.position = new Vector3(xPos, spawnY, 0);
+
+                    // Make sure it has correct component
+                    ObstacleItem obstacleItem = obstacle.GetComponent<ObstacleItem>();
+                    if (obstacleItem == null)
+                    {
+                        obstacleItem = obstacle.AddComponent<ObstacleItem>();
+                    }
+
+                    // Mark as not a main object
+                    obstacleItem.isMainObject = false;
+
+                    // Tag properly
+                    obstacle.tag = "Obstacle";
+
+                    // Ensure collider is set
+                    BoxCollider2D collider = obstacle.GetComponent<BoxCollider2D>();
+                    if (collider == null)
+                    {
+                        collider = obstacle.AddComponent<BoxCollider2D>();
+                    }
+                    collider.isTrigger = true;
+
+                    // Set size from sprite if needed
+                    SpriteRenderer sr = obstacle.GetComponent<SpriteRenderer>();
+                    if (sr != null)
+                    {
+                        // Add spacing based on obstacle height
+                        float height = sr.bounds.size.y;
+                        spawnY += height + Random.Range(1f, sideObstacleSpacing);
+
+                        // Set collider size
+                        if (collider.size.x <= 0.001f || collider.size.y <= 0.001f)
+                        {
+                            collider.size = sr.bounds.size;
+                        }
+                    }
+                    else
+                    {
+                        spawnY += sideObstacleSpacing;
+                    }
+
+                    // Activate and track
                     obstacle.SetActive(true);
-                    activeObstacles.Add(obstacle);
-
-                    // Increase spawn position by obstacle height + spacing
-                    spawnY += obstacle.GetComponent<SpriteRenderer>()?.bounds.size.y ?? 1f;
-                    spawnY += Random.Range(1f, sideObstacleSpacing);
+                    activeObjects.Add(obstacle);
                 }
                 else
                 {
@@ -315,32 +410,63 @@ public class LevelManager : MonoBehaviour
         }
     }
 
-    public void MoveObstacles(float speed)
+    public void MoveObjects(float speed)
     {
         if (GameManager.Instance == null || GameManager.Instance.gameOver || !GameManager.Instance.isGameStarted)
             return;
 
         List<GameObject> objectsToRemove = new List<GameObject>();
+        int mainObjectsProcessed = 0;
 
-        foreach (GameObject obj in activeObstacles)
+        // Cache player position for missed trash detection
+        float playerY = playerTransform != null ? playerTransform.position.y : -5f;
+
+        foreach (GameObject obj in activeObjects)
         {
             if (obj != null && obj.activeInHierarchy)
             {
-                // Move obstacle down
+                // Move object down
                 obj.transform.position += Vector3.down * speed * Time.deltaTime;
 
-                // Check if the obstacle has moved off screen
+                // Check if trash was missed (passed player position)
+                TrashItem trashItem = obj.GetComponent<TrashItem>();
+                if (trashItem != null && !trashItem.isCollected && obj.transform.position.y < playerY)
+                {
+                    // Only count for main objects
+                    if (trashItem.isMainObject)
+                    {
+                        mainObjectsProcessed++;
+                        remainingMainObjects--;
+                    }
+
+                    trashItem.Missed();
+                    objectsToRemove.Add(obj);
+                    continue;
+                }
+
+                // Check if the object has moved off screen
                 if (obj.transform.position.y < -10f)
                 {
-                    // Check if it's a trash item that was missed
-                    if (obj.CompareTag("Trash"))
+                    // Count if it's a main object
+                    bool isMainObject = false;
+
+                    if (trashItem != null)
                     {
-                        TrashItem trashItem = obj.GetComponent<TrashItem>();
-                        if (trashItem != null && !trashItem.isCollected)
+                        isMainObject = trashItem.isMainObject;
+                    }
+                    else
+                    {
+                        ObstacleItem obstacleItem = obj.GetComponent<ObstacleItem>();
+                        if (obstacleItem != null)
                         {
-                            // Now safe to use GameManager
-                            GameManager.Instance?.MissTrash();
+                            isMainObject = obstacleItem.isMainObject;
                         }
+                    }
+
+                    if (isMainObject)
+                    {
+                        mainObjectsProcessed++;
+                        remainingMainObjects--;
                     }
 
                     obj.SetActive(false);
@@ -352,13 +478,27 @@ public class LevelManager : MonoBehaviour
         // Remove deactivated objects from active list
         foreach (GameObject obj in objectsToRemove)
         {
-            activeObstacles.Remove(obj);
+            activeObjects.Remove(obj);
+        }
+
+        // Debug info
+        if (showDebugInfo && Time.frameCount % 60 == 0)
+        {
+            Debug.Log($"[LevelManager] Objects: {activeObjects.Count} active, {remainingMainObjects}/{totalMainObjects} main remaining");
+        }
+
+        // Check if level is nearly complete
+        if (!levelCompleting && remainingMainObjects <= 0)
+        {
+            Debug.Log("[LevelManager] All main objects processed. Starting level completion countdown.");
+            levelCompleting = true;
+            levelCheckTimer = 0f;
         }
     }
 
-    private void ClearActiveObstacles()
+    private void ClearActiveObjects()
     {
-        foreach (GameObject obj in activeObstacles)
+        foreach (GameObject obj in activeObjects)
         {
             if (obj != null)
             {
@@ -366,21 +506,80 @@ public class LevelManager : MonoBehaviour
             }
         }
 
-        activeObstacles.Clear();
+        activeObjects.Clear();
+        remainingMainObjects = 0;
+        totalMainObjects = 0;
     }
 
     public bool IsLevelComplete()
     {
-        // Level is complete when all obstacles have been processed
-        return activeObstacles.Count == 0;
+        // Manual override for testing
+        if (forceNextLevel)
+        {
+            forceNextLevel = false;
+            Debug.Log("[LevelManager] FORCED level completion");
+            return true;
+        }
+
+        // Normal level completion check with delay
+        if (levelCompleting)
+        {
+            levelCheckTimer += Time.deltaTime;
+
+            if (levelCheckTimer >= levelCheckDelay)
+            {
+                Debug.Log("[LevelManager] Level complete! All objects processed.");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Method for TrashItem to notify when collected
+    public void NotifyObjectProcessed(bool isMainObject)
+    {
+        if (isMainObject)
+        {
+            remainingMainObjects--;
+
+            if (showDebugInfo)
+            {
+                Debug.Log($"[LevelManager] Main object processed, {remainingMainObjects}/{totalMainObjects} remain");
+            }
+        }
     }
 
     private void Update()
     {
         if (GameManager.Instance != null && GameManager.Instance.isGameStarted && !GameManager.Instance.gameOver)
         {
-            MoveObstacles(GameManager.Instance.currentSpeed);
-            GameManager.Instance.CheckLevelCompletion();
+            // Move objects at same speed as road scrolling
+            float speed = GameManager.Instance.currentSpeed;
+            if (LaneManager.Instance != null)
+            {
+                speed = LaneManager.Instance.GetScrollSpeed();
+            }
+
+            MoveObjects(speed);
+
+            // Check if level is complete
+            if (IsLevelComplete())
+            {
+                // Reset flag
+                levelCompleting = false;
+
+                // Notify game manager
+                GameManager.Instance.CheckLevelCompletion();
+            }
+        }
+
+        // For debugging
+        if (Input.GetKeyDown(KeyCode.F5))
+        {
+            forceNextLevel = true;
         }
     }
+
+  
 }

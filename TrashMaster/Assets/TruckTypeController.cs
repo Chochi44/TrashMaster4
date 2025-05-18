@@ -36,8 +36,7 @@ public class TruckTypeController : MonoBehaviour
     public void SetTruckType(GameManager.TruckType type)
     {
         currentType = type;
-
-        // Update truck sprite based on type (already handled by GameManager)
+        Debug.Log("Truck type set to: " + type);
 
         // Update indicators
         if (generalIndicator != null) generalIndicator.SetActive(type == GameManager.TruckType.General);
@@ -87,13 +86,6 @@ public class TruckTypeController : MonoBehaviour
             return true;
 
         return false;
-    }
-
-    // Visual feedback when the player tries to collect the wrong type
-    public void ShowWrongTypeEffect()
-    {
-        // You could add a particle effect, sound, or animation here
-        Debug.Log("Cannot collect - wrong truck type!");
     }
 
     // Update check - set truck type if it changes in GameManager

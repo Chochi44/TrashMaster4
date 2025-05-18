@@ -21,6 +21,11 @@ public class UIManager : MonoBehaviour
     public Color plasticTypeColor = Color.green;
     public Color glassTypeColor = Color.cyan;
 
+    [Header("Wrong Type Message")]
+    public TextMeshProUGUI wrongTypeText;
+    public float wrongTypeTextDuration = 1f;
+    private Coroutine wrongTypeTextCoroutine;
+
     [Header("Animation Settings")]
     public float levelUpTextDuration = 2f;
     public float levelUpTextSpeed = 50f;
@@ -315,6 +320,66 @@ public class UIManager : MonoBehaviour
         // Reset color and position
         truckTypeChangeText.color = new Color(textColor.r, textColor.g, textColor.b, 1f);
         rectTransform.anchoredPosition = startPosition;
+    }
+
+    public void ShowWrongTypeMessage()
+    {
+        // Cancel any existing animation
+        if (wrongTypeTextCoroutine != null)
+        {
+            StopCoroutine(wrongTypeTextCoroutine);
+        }
+
+        // Start new animation
+        if (wrongTypeText != null)
+        {
+            wrongTypeText.text = "WRONG TRUCK TYPE!";
+            wrongTypeText.color = Color.red;
+
+            RectTransform rectTransform = wrongTypeText.GetComponent<RectTransform>();
+            if (rectTransform != null)
+            {
+                rectTransform.anchoredPosition = Vector2.zero;
+            }
+
+            wrongTypeTextCoroutine = StartCoroutine(AnimateWrongTypeText());
+        }
+    }
+
+    private IEnumerator AnimateWrongTypeText()
+    {
+        // Ensure text is active
+        wrongTypeText.gameObject.SetActive(true);
+
+        // Store original color
+        Color originalColor = wrongTypeText.color;
+
+        // Animation duration
+        float startTime = Time.time;
+        float duration = wrongTypeTextDuration;
+
+        while (Time.time - startTime < duration)
+        {
+            // Pulse effect
+            float pulse = 0.7f + 0.3f * Mathf.Sin((Time.time - startTime) * 10f);
+            wrongTypeText.transform.localScale = Vector3.one * pulse;
+
+            // Fade out near the end
+            if (Time.time - startTime > duration * 0.7f)
+            {
+                float alpha = 1 - ((Time.time - startTime) - (duration * 0.7f)) / (duration * 0.3f);
+                wrongTypeText.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
+            }
+
+            yield return null;
+        }
+
+        // Hide text
+        wrongTypeText.gameObject.SetActive(false);
+
+        // Reset scale and color
+        wrongTypeText.transform.localScale = Vector3.one;
+        wrongTypeText.color = originalColor;
     }
 
     // Method to show both level up and truck type text together
