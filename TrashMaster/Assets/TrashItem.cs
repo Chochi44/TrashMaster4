@@ -17,6 +17,9 @@ public class TrashItem : MonoBehaviour
     // Add a flag to track if penalty was already applied
     private bool penaltyApplied = false;
 
+    // Add a flag to track if this trash was missed (passed behind player)
+    private bool wasMissed = false;
+
     [Header("Effects")]
     public GameObject collectionEffectPrefab;
 
@@ -58,6 +61,7 @@ public class TrashItem : MonoBehaviour
 
         // Reset penalty flag when object is created
         penaltyApplied = false;
+        wasMissed = false;
     }
 
     private void OnEnable()
@@ -65,6 +69,7 @@ public class TrashItem : MonoBehaviour
         // When object is reactivated, reset flags
         penaltyApplied = false;
         isCollected = false;
+        wasMissed = false;
 
         // Update collectible status
         if (GameManager.Instance != null)
@@ -100,7 +105,7 @@ public class TrashItem : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (other.CompareTag("Player") && !isCollected && !penaltyApplied)
+        if (other.CompareTag("Player") && !isCollected && !penaltyApplied && !wasMissed)
         {
             HandlePlayerCollision(other.gameObject);
         }
@@ -109,7 +114,7 @@ public class TrashItem : MonoBehaviour
     // Manual collision check in case triggers fail
     private void Update()
     {
-        if (!isCollected && !penaltyApplied && player != null && player.GetComponent<BoxCollider2D>() != null)
+        if (!isCollected && !penaltyApplied && !wasMissed && player != null && player.GetComponent<BoxCollider2D>() != null)
         {
             if (myCollider.bounds.Intersects(player.GetComponent<BoxCollider2D>().bounds))
             {
@@ -130,26 +135,18 @@ public class TrashItem : MonoBehaviour
         }
         else
         {
-            // Wrong type - apply penalty and show notification
+            // Wrong type - apply penalty and remove immediately
             // But only if we haven't already applied a penalty
             if (!penaltyApplied)
             {
                 ApplyWrongTypePenalty();
-
-                // Set flag to prevent multiple penalties
-                penaltyApplied = true;
-
-                // Add a short delay before allowing further collisions
-                StartCoroutine(ResetPenaltyAfterDelay(1.0f));
+                // Note: ApplyWrongTypePenalty now handles deactivation, so no coroutine needed
             }
         }
     }
 
-    private IEnumerator ResetPenaltyAfterDelay(float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        penaltyApplied = false;
-    }
+    // Remove this coroutine method as it's no longer needed
+    // private IEnumerator ResetPenaltyAfterDelay(float delay) - REMOVED
 
     private void CollectCorrectType()
     {
@@ -183,51 +180,84 @@ public class TrashItem : MonoBehaviour
 
     private void ApplyWrongTypePenalty()
     {
-        // Apply penalty for trying to collect wrong type
-        Debug.Log("Wrong truck type for this trash - applying penalty: " + gameObject.name);
-
-        // Apply wrong type penalty ONCE
-        if (GameManager.Instance != null)
+        if (!isCollected && !penaltyApplied)
         {
-            // Apply the penalty (25 points)
-            GameManager.Instance.ApplyWrongTypePenalty();
+            // Mark as collected to prevent further interactions
+            isCollected = true;
+            penaltyApplied = true;
 
-            // Show wrong type notification
-            if (GameManager.Instance.uiManager != null)
+            Debug.Log("Wrong truck type for this trash - applying penalty and removing: " + gameObject.name);
+
+            // Apply wrong type penalty
+            if (GameManager.Instance != null)
             {
-                GameManager.Instance.uiManager.ShowWrongTypeMessage();
-            }
-        }
+                // Apply the penalty (25 points)
+                GameManager.Instance.ApplyWrongTypePenalty();
 
-        // The trash remains on the road, not collected
+                // Show wrong type notification
+                if (GameManager.Instance.uiManager != null)
+                {
+                    GameManager.Instance.uiManager.ShowWrongTypeMessage();
+                }
+            }
+
+            // Notify level manager that this object is processed (for level completion tracking)
+            if (levelManager != null && isMainObject)
+            {
+                levelManager.NotifyObjectProcessed(isMainObject);
+            }
+
+            // Make the trash disappear (same as correct collection)
+            gameObject.SetActive(false);
+        }
     }
 
-    // This is called by the LevelManager when the trash passes below the player
-    public void Missed()
+    // This is called by the LevelManager when the trash passes behind the player
+    public void PassedBehindPlayer()
     {
-        if (!isCollected)
+        if (!isCollected && !wasMissed)
         {
-            Debug.Log("[TrashItem] Trash missed: " + gameObject.name);
+            wasMissed = true;
+            Debug.Log("[TrashItem] Trash passed behind player: " + gameObject.name);
 
             // Apply missed trash penalty ONLY if this was collectible by the current truck
             if (GameManager.Instance != null && isCollectible && !penaltyApplied)
             {
                 Debug.Log("[TrashItem] Applying penalty for missing collectible trash: -25 points");
                 GameManager.Instance.MissTrash();
+                penaltyApplied = true; // Prevent duplicate penalties
             }
             else
             {
                 Debug.Log("[TrashItem] No penalty for missing non-collectible trash or already penalized trash");
             }
 
-            // Notify level manager that this object is processed
+            // Notify level manager that this object is processed (for level completion tracking)
             if (levelManager != null && isMainObject)
             {
                 levelManager.NotifyObjectProcessed(isMainObject);
             }
-
-            // Deactivate the object
-            gameObject.SetActive(false);
         }
+    }
+
+    // This is called by the LevelManager when the trash goes completely off screen
+    public void OffScreen()
+    {
+        Debug.Log("[TrashItem] Trash went off screen: " + gameObject.name);
+
+        // If somehow this wasn't already processed, process it now
+        if (!isCollected && !wasMissed)
+        {
+            PassedBehindPlayer(); // This will handle the penalty logic
+        }
+
+        // Deactivate the object (make it disappear)
+        gameObject.SetActive(false);
+    }
+
+    // Legacy method for backwards compatibility - now just calls PassedBehindPlayer
+    public void Missed()
+    {
+        PassedBehindPlayer();
     }
 }

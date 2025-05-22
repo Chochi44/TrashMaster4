@@ -134,7 +134,7 @@ public class PlayerController : MonoBehaviour
             minPlayableLane = 1; // First playable lane (after left side lane)
             maxPlayableLane = centerLaneCount; // Last playable lane (before right side lane)
 
-            Debug.Log($"Updated lane boundaries: {minPlayableLane}-{maxPlayableLane}, Total center lanes: {centerLaneCount}");
+            //Debug.Log($"Updated lane boundaries: {minPlayableLane}-{maxPlayableLane}, Total center lanes: {centerLaneCount}");
 
             // Make sure current lane is within bounds
             if (currentLane < minPlayableLane)

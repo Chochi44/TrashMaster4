@@ -389,12 +389,12 @@ public class LevelManager : MonoBehaviour
                 {
                     if (randomValue < matchingTypeChance)
                     {
-                        // 98% chance: return paper trash
+                        // 70% chance: return paper trash
                         return paperTrash[Random.Range(0, paperTrash.Count)];
                     }
                     else
                     {
-                        // 2% chance: return other types
+                        // 30% chance: return other types
                         List<GameObject> otherTypes = new List<GameObject>();
                         otherTypes.AddRange(plasticTrash);
                         otherTypes.AddRange(glassTrash);
@@ -412,12 +412,12 @@ public class LevelManager : MonoBehaviour
                 {
                     if (randomValue < matchingTypeChance)
                     {
-                        // 98% chance: return plastic trash
+                        // 70% chance: return plastic trash
                         return plasticTrash[Random.Range(0, plasticTrash.Count)];
                     }
                     else
                     {
-                        // 2% chance: return other types
+                        // 30% chance: return other types
                         List<GameObject> otherTypes = new List<GameObject>();
                         otherTypes.AddRange(paperTrash);
                         otherTypes.AddRange(glassTrash);
@@ -435,12 +435,12 @@ public class LevelManager : MonoBehaviour
                 {
                     if (randomValue < matchingTypeChance)
                     {
-                        // 98% chance: return glass trash
+                        // 70% chance: return glass trash
                         return glassTrash[Random.Range(0, glassTrash.Count)];
                     }
                     else
                     {
-                        // 2% chance: return other types
+                        // 30% chance: return other types
                         List<GameObject> otherTypes = new List<GameObject>();
                         otherTypes.AddRange(paperTrash);
                         otherTypes.AddRange(plasticTrash);
@@ -655,30 +655,27 @@ public class LevelManager : MonoBehaviour
                     foundActiveMainObject = true;
                 }
 
-                // Check if trash was missed (passed player position)
+                // NEW LOGIC: Separate penalty application from visual disappearance
+                // Check if trash passed behind player (for penalty application)
                 if (trashItem != null && !trashItem.isCollected && obj.transform.position.y < playerY)
                 {
-                    // Only count for main objects
-                    if (trashItem.isMainObject)
-                    {
-                        mainObjectsProcessed++;
-                        remainingMainObjects--;
-                    }
-
-                    trashItem.Missed();
-                    objectsToRemove.Add(obj);
-                    continue;
+                    // Call the new method that applies penalty but doesn't deactivate
+                    trashItem.PassedBehindPlayer();
+                    // Don't add to objectsToRemove yet - let it continue to bottom of screen
                 }
 
-                // Check if the object has moved off screen
+                // Check if the object has moved completely off screen (bottom)
                 if (obj.transform.position.y < -10f)
                 {
-                    // Count if it's a main object
+                    // Count if it's a main object for level completion
                     bool isMain = false;
 
                     if (trashItem != null)
                     {
                         isMain = trashItem.isMainObject;
+
+                        // Call OffScreen method to handle final cleanup
+                        trashItem.OffScreen();
                     }
                     else
                     {
