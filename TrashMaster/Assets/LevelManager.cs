@@ -19,8 +19,10 @@ public class LevelManager : MonoBehaviour
     public int baseObjectCount = 15;             // Changed from 10 to 15
     public int additionalObjectsPerLevel = 7;    // Increased from 5 to 7 (roughly maintains ratio)
 
-    [Header("Level Completion")]
-    public float levelCompletionDelay = 3f;
+    [Header("Seamless Level Transition")]
+    public float newLevelSpawnOffset = 5f;       // REDUCED: How far ahead to spawn new level objects (was 15f)
+    public float maxSpawnDistance = 20f;         // NEW: Maximum distance from camera to spawn objects
+    public bool enableSeamlessTransition = true; // NEW: Toggle for seamless mode
 
     [Header("Debug")]
     public bool showDebugInfo = true;
@@ -40,16 +42,12 @@ public class LevelManager : MonoBehaviour
     private int totalMainObjects = 0;
     private int remainingMainObjects = 0;
     private float maxObjectY = 0f; // Track the highest Y position of any spawned object
-    private bool levelCompleting = false;
-    private float levelCheckTimer = 0f;
-    private float levelCheckDelay = 3f;
 
-    // Store the last non-side object position
-    private float highestObjectY = -100f;
-
-    // Track if all objects have passed player
-    private bool allObjectsPassedPlayer = false;
-    private float allObjectsPassedTime = 0f;
+    // NEW: Seamless transition tracking
+    private bool levelTransitionTriggered = false;
+    private bool newLevelObjectsSpawned = false;
+    private int currentLevel = 1;
+    private float highestSideObjectY = 0f; // Track highest side obstacle position
 
     // Add counters to track what we actually spawn
     private Dictionary<string, int> spawnedTrashCounts = new Dictionary<string, int>();
@@ -150,23 +148,45 @@ public class LevelManager : MonoBehaviour
 
     public void GenerateLevel(int level)
     {
-        // Reset level completion flags and counters
-        levelCompleting = false;
-        levelCheckTimer = 0f;
-        highestObjectY = -100f;
-        allObjectsPassedPlayer = false;
-        allObjectsPassedTime = 0f;
+        Debug.Log($"[LevelManager] ===== GenerateLevel called for level {level} =====");
+        Debug.Log($"[LevelManager] enableSeamlessTransition: {enableSeamlessTransition}");
+        Debug.Log($"[LevelManager] Current activeObjects count: {activeObjects.Count}");
+
+        // Store current level
+        currentLevel = level;
+
+        // Always reset these flags when generating a new level
+        levelTransitionTriggered = false;
+        newLevelObjectsSpawned = false;
+
+        // Only clear objects for first level or non-seamless mode
+        if (!enableSeamlessTransition || level == 1)
+        {
+            Debug.Log($"[LevelManager] Clearing active objects (seamless: {enableSeamlessTransition}, level: {level})");
+            ClearActiveObjects();
+        }
+        else
+        {
+            Debug.Log($"[LevelManager] Seamless mode: Keeping existing {activeObjects.Count} objects");
+        }
 
         // Reset spawn counters
         spawnedTrashCounts.Clear();
 
-        // Clear any active objects
-        ClearActiveObjects();
-
         // Calculate total objects based on level
         int totalObjects = baseObjectCount + (level - 1) * additionalObjectsPerLevel;
-        totalMainObjects = totalObjects;
-        remainingMainObjects = totalObjects;
+
+        // NEW: In seamless mode, add to existing counts rather than reset
+        if (enableSeamlessTransition && level > 1)
+        {
+            totalMainObjects += totalObjects;
+            remainingMainObjects += totalObjects;
+        }
+        else
+        {
+            totalMainObjects = totalObjects;
+            remainingMainObjects = totalObjects;
+        }
 
         // Calculate trash vs obstacles ratio
         int trashCount = Mathf.RoundToInt(totalObjects * trashRatio);
@@ -181,8 +201,34 @@ public class LevelManager : MonoBehaviour
             totalLanes = LaneManager.Instance.GetCenterLaneCount();
         }
 
-        // Start spawning from outside the visible screen
-        float spawnY = 10f;
+        // NEW: Calculate spawn start position for seamless transition
+        float spawnStartY = 10f; // Default for first level
+        if (enableSeamlessTransition && level > 1)
+        {
+            // For seamless transition, spawn just above the visible area
+            float cameraY = Camera.main ? Camera.main.transform.position.y : 0f;
+            float cameraHeight = Camera.main ? Camera.main.orthographicSize : 5f;
+
+            // Spawn just above the top of the camera view
+            spawnStartY = cameraY + cameraHeight + newLevelSpawnOffset;
+
+            // Clamp spawn distance to prevent objects from being too far away
+            float maxAllowedY = cameraY + maxSpawnDistance;
+            if (spawnStartY > maxAllowedY)
+            {
+                spawnStartY = maxAllowedY;
+                Debug.Log($"[LevelManager] Clamped spawn start to max distance: {spawnStartY}");
+            }
+
+            Debug.Log($"[LevelManager] Seamless spawn start: {spawnStartY} (camera: {cameraY}, height: {cameraHeight}, offset: {newLevelSpawnOffset})");
+        }
+        else
+        {
+            Debug.Log($"[LevelManager] Standard spawn start: {spawnStartY}");
+        }
+
+        float spawnY = spawnStartY;
+        float originalMaxObjectY = maxObjectY;
         maxObjectY = spawnY;
 
         // List to track where we'll spawn trash and obstacles
@@ -207,12 +253,6 @@ public class LevelManager : MonoBehaviour
 
             mainPositions.Add(new Vector2(xPos, spawnY));
 
-            // Track highest Y position
-            if (spawnY > highestObjectY)
-            {
-                highestObjectY = spawnY;
-            }
-
             // Increase spawn distance for next object (reduced spacing)
             float spacing = Random.Range(minObstacleSpacing, maxObstacleSpacing);
             spawnY += spacing;
@@ -229,26 +269,49 @@ public class LevelManager : MonoBehaviour
         }
 
         // Spawn trash in the first trashCount positions
+        Debug.Log($"[LevelManager] Spawning {trashCount} trash items...");
         for (int i = 0; i < trashCount && i < mainPositions.Count; i++)
         {
             SpawnTrashAt(mainPositions[i].x, mainPositions[i].y, true);
         }
 
         // Spawn obstacles in the remaining positions
+        Debug.Log($"[LevelManager] Spawning {obstacleCount} obstacles...");
         for (int i = trashCount; i < mainPositions.Count; i++)
         {
             SpawnObstacleAt(mainPositions[i].x, mainPositions[i].y, true);
         }
 
+        // NEW: Calculate side obstacle spawn position for seamless transition
+        float sideSpawnStartY = 0f;
+        if (enableSeamlessTransition && level > 1)
+        {
+            // In seamless mode, continue side obstacles from current camera position
+            float cameraY = Camera.main ? Camera.main.transform.position.y : 0f;
+            float cameraHeight = Camera.main ? Camera.main.orthographicSize : 5f;
+
+            // Start side obstacles from just above camera view
+            sideSpawnStartY = cameraY + cameraHeight;
+            Debug.Log($"[LevelManager] Seamless side obstacle spawn start: {sideSpawnStartY}");
+        }
+        else
+        {
+            Debug.Log($"[LevelManager] Standard side obstacle spawn start: {sideSpawnStartY}");
+        }
+
         // Generate side obstacles - left side (lane 0)
-        GenerateSideObstacles(0, spawnY);
+        Debug.Log($"[LevelManager] Generating left side obstacles from Y {sideSpawnStartY} to {spawnY + 10f}");
+        GenerateSideObstacles(0, spawnY, sideSpawnStartY);
 
         // Generate side obstacles - right side
         int rightSideLane = (LaneManager.Instance != null) ?
             LaneManager.Instance.GetTotalLaneCount() - 1 : 6;
-        GenerateSideObstacles(rightSideLane, spawnY);
+        Debug.Log($"[LevelManager] Generating right side obstacles from Y {sideSpawnStartY} to {spawnY + 10f}");
+        GenerateSideObstacles(rightSideLane, spawnY, sideSpawnStartY);
 
         Debug.Log($"[LevelManager] Level {level} generated with {activeObjects.Count} total objects. Tracking {remainingMainObjects} main objects for completion.");
+        Debug.Log($"[LevelManager] Spawn range: {spawnStartY} to {maxObjectY}, Total main objects: {totalMainObjects}");
+        Debug.Log($"[LevelManager] Side obstacle prefabs available: {(sideObstaclePrefabs?.Length ?? 0)}");
 
         // Log actual spawned trash distribution
         Debug.Log($"[LevelManager] ACTUAL SPAWNED TRASH DISTRIBUTION:");
@@ -261,21 +324,27 @@ public class LevelManager : MonoBehaviour
 
     private void SpawnTrashAt(float x, float y, bool isMainObject)
     {
+        Debug.Log($"[LevelManager] SpawnTrashAt called: x={x}, y={y}, isMain={isMainObject}");
+
         if (trashPrefabs != null && trashPrefabs.Length > 0)
         {
             // Select a trash prefab based on current truck type
             GameObject prefab = SelectTrashPrefabByType();
+            Debug.Log($"[LevelManager] Selected trash prefab: {prefab?.name}");
+
             GameObject trash = GetPooledObject(pooledTrash, prefab);
 
             if (trash != null)
             {
                 trash.transform.position = new Vector3(x, y, 0);
+                Debug.Log($"[LevelManager] Trash positioned at: {trash.transform.position}");
 
                 // Make sure it has a TrashItem component
                 TrashItem trashItem = trash.GetComponent<TrashItem>();
                 if (trashItem == null)
                 {
                     trashItem = trash.AddComponent<TrashItem>();
+                    Debug.Log($"[LevelManager] Added TrashItem component to: {trash.name}");
                 }
 
                 // IMPORTANT: Copy the trash type flags from the selected prefab
@@ -324,6 +393,8 @@ public class LevelManager : MonoBehaviour
                 trash.SetActive(true);
                 activeObjects.Add(trash);
 
+                Debug.Log($"[LevelManager] Trash activated and added to activeObjects. Total active: {activeObjects.Count}");
+
                 // Count what type we actually spawned
                 TrashItem spawnedItem = trash.GetComponent<TrashItem>();
                 if (spawnedItem != null)
@@ -339,9 +410,17 @@ public class LevelManager : MonoBehaviour
                     spawnedTrashCounts[trashType]++;
 
                     // Debug log to verify the fix
-                    Debug.Log($"[LevelManager] Spawned {trashType} trash from prefab {prefab.name} with sprite {trashSpriteRenderer?.sprite?.name}");
+                    Debug.Log($"[LevelManager] Successfully spawned {trashType} trash at {trash.transform.position}");
                 }
             }
+            else
+            {
+                Debug.LogError($"[LevelManager] Failed to get pooled trash object!");
+            }
+        }
+        else
+        {
+            Debug.LogError($"[LevelManager] No trash prefabs available!");
         }
     }
 
@@ -472,14 +551,19 @@ public class LevelManager : MonoBehaviour
 
     private void SpawnObstacleAt(float x, float y, bool isMainObject)
     {
+        Debug.Log($"[LevelManager] SpawnObstacleAt called: x={x}, y={y}, isMain={isMainObject}");
+
         if (obstaclePrefabs != null && obstaclePrefabs.Length > 0)
         {
             GameObject prefab = obstaclePrefabs[Random.Range(0, obstaclePrefabs.Length)];
+            Debug.Log($"[LevelManager] Selected obstacle prefab: {prefab?.name}");
+
             GameObject obstacle = GetPooledObject(pooledObstacles, prefab);
 
             if (obstacle != null)
             {
                 obstacle.transform.position = new Vector3(x, y, 0);
+                Debug.Log($"[LevelManager] Obstacle positioned at: {obstacle.transform.position}");
 
                 // Check if this is a complex obstacle (Island)
                 IslandController islandController = obstacle.GetComponent<IslandController>();
@@ -528,13 +612,26 @@ public class LevelManager : MonoBehaviour
                 // Activate and track
                 obstacle.SetActive(true);
                 activeObjects.Add(obstacle);
+
+                Debug.Log($"[LevelManager] Obstacle activated and added to activeObjects. Total active: {activeObjects.Count}");
             }
+            else
+            {
+                Debug.LogError($"[LevelManager] Failed to get pooled obstacle object!");
+            }
+        }
+        else
+        {
+            Debug.LogError($"[LevelManager] No obstacle prefabs available!");
         }
     }
 
-    private void GenerateSideObstacles(int lane, float maxSpawnY)
+    private void GenerateSideObstacles(int lane, float maxSpawnY, float startY = 0f)
     {
-        float spawnY = 0f;
+        Debug.Log($"[LevelManager] GenerateSideObstacles: lane {lane}, startY {startY}, maxSpawnY {maxSpawnY}");
+
+        float spawnY = startY;
+        int sideObstacleCount = 0;
 
         while (spawnY < maxSpawnY + 10f) // Extra for offscreen content
         {
@@ -581,11 +678,10 @@ public class LevelManager : MonoBehaviour
 
                     // Set size from sprite if needed
                     SpriteRenderer sr = obstacle.GetComponent<SpriteRenderer>();
+                    float obstacleHeight = 1f; // Default height
                     if (sr != null)
                     {
-                        // Add spacing based on obstacle height (normal side spacing)
-                        float height = sr.bounds.size.y;
-                        spawnY += height + Random.Range(1f, sideObstacleSpacing);
+                        obstacleHeight = sr.bounds.size.y;
 
                         // Set collider size
                         if (collider.size.x <= 0.001f || collider.size.y <= 0.001f)
@@ -593,31 +689,48 @@ public class LevelManager : MonoBehaviour
                             collider.size = sr.bounds.size;
                         }
                     }
-                    else
-                    {
-                        spawnY += sideObstacleSpacing;
-                    }
+
+                    // FIXED: Better spacing calculation to prevent stacking
+                    float spacing = Mathf.Max(sideObstacleSpacing, obstacleHeight + 1f); // Ensure minimum gap
+                    spawnY += obstacleHeight + Random.Range(spacing * 0.5f, spacing * 1.5f);
+
+                    // NEW: Track highest side obstacle position
+                    highestSideObjectY = Mathf.Max(highestSideObjectY, spawnY);
 
                     // Activate and track
                     obstacle.SetActive(true);
                     activeObjects.Add(obstacle);
+                    sideObstacleCount++;
+
+                    Debug.Log($"[LevelManager] Side obstacle spawned at {obstacle.transform.position}, next spawn Y: {spawnY}");
                 }
                 else
                 {
+                    // FIXED: Use proper spacing even when no object spawned
                     spawnY += sideObstacleSpacing;
                 }
             }
             else
             {
-                spawnY += sideObstacleSpacing;
+                Debug.LogError($"[LevelManager] No side obstacle prefabs available!");
+                break;
             }
         }
+
+        Debug.Log($"[LevelManager] Generated {sideObstacleCount} side obstacles for lane {lane}");
     }
 
     public void MoveObjects(float speed)
     {
         if (GameManager.Instance == null || GameManager.Instance.gameOver || !GameManager.Instance.isGameStarted)
             return;
+
+        // NEW: Get the actual lane scroll speed to sync objects with road
+        float laneScrollSpeed = speed;
+        if (LaneManager.Instance != null)
+        {
+            laneScrollSpeed = LaneManager.Instance.GetScrollSpeed();
+        }
 
         List<GameObject> objectsToRemove = new List<GameObject>();
         int mainObjectsProcessed = 0;
@@ -630,8 +743,8 @@ public class LevelManager : MonoBehaviour
         {
             if (obj != null && obj.activeInHierarchy)
             {
-                // Move object down
-                obj.transform.position += Vector3.down * speed * Time.deltaTime;
+                // Move ALL objects at the exact same synchronized speed
+                obj.transform.position += Vector3.down * laneScrollSpeed * Time.deltaTime;
 
                 // Check if this is a main object and if it's above the player
                 bool isMainObject = false;
@@ -655,7 +768,7 @@ public class LevelManager : MonoBehaviour
                     foundActiveMainObject = true;
                 }
 
-                // NEW LOGIC: Separate penalty application from visual disappearance
+                // Separate penalty application from visual disappearance
                 // Check if trash passed behind player (for penalty application)
                 if (trashItem != null && !trashItem.isCollected && obj.transform.position.y < playerY)
                 {
@@ -707,26 +820,51 @@ public class LevelManager : MonoBehaviour
             activeObjects.Remove(obj);
         }
 
-        // Check if all main objects have passed the player
-        if (!foundActiveMainObject && !allObjectsPassedPlayer && remainingMainObjects <= 0)
+        // NEW: Check if all main objects have passed and trigger level progression
+        if (!levelTransitionTriggered && !foundActiveMainObject && remainingMainObjects <= 0)
         {
-            allObjectsPassedPlayer = true;
-            allObjectsPassedTime = Time.time;
-            Debug.Log("[LevelManager] All main objects have passed the player. Starting level completion countdown.");
+            levelTransitionTriggered = true;
+            Debug.Log("[LevelManager] ===== ALL MAIN OBJECTS PASSED - TRIGGERING LEVEL PROGRESSION =====");
+            Debug.Log($"[LevelManager] Current level: {currentLevel}, enableSeamlessTransition: {enableSeamlessTransition}");
+
+            if (enableSeamlessTransition)
+            {
+                // In seamless mode, generate new level immediately, then notify GameManager
+                int nextLevel = currentLevel + 1;
+                Debug.Log($"[LevelManager] Seamless mode: Generating level {nextLevel} objects immediately...");
+                Debug.Log($"[LevelManager] Current maxObjectY before generation: {maxObjectY}");
+
+                GenerateLevel(nextLevel);
+
+                Debug.Log($"[LevelManager] After generation - activeObjects: {activeObjects.Count}, maxObjectY: {maxObjectY}");
+
+                // Then notify GameManager for UI updates, truck changes, etc.
+                if (GameManager.Instance != null)
+                {
+                    Debug.Log("[LevelManager] Notifying GameManager for UI updates...");
+                    GameManager.Instance.CheckLevelCompletion();
+                }
+            }
+            else
+            {
+                // In traditional mode, let GameManager handle everything
+                Debug.Log("[LevelManager] Traditional mode: Letting GameManager handle level completion...");
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.CheckLevelCompletion();
+                }
+            }
         }
 
         // Debug info
         if (showDebugInfo && Time.frameCount % 60 == 0)
         {
             Debug.Log($"[LevelManager] Objects: {activeObjects.Count} active, {remainingMainObjects}/{totalMainObjects} main remaining");
-        }
 
-        // Check if level is nearly complete - traditional method
-        if (!levelCompleting && remainingMainObjects <= 0)
-        {
-            Debug.Log("[LevelManager] All main objects processed. Starting level completion countdown.");
-            levelCompleting = true;
-            levelCheckTimer = 0f;
+            if (levelTransitionTriggered)
+            {
+                Debug.Log($"[LevelManager] Level transition active - seamless road continuing...");
+            }
         }
     }
 
@@ -743,8 +881,14 @@ public class LevelManager : MonoBehaviour
         activeObjects.Clear();
         remainingMainObjects = 0;
         totalMainObjects = 0;
-        allObjectsPassedPlayer = false;
-        allObjectsPassedTime = 0f;
+        levelTransitionTriggered = false;
+        newLevelObjectsSpawned = false;
+
+        // Only reset these if we're actually clearing everything
+        maxObjectY = 0f;
+        highestSideObjectY = 0f;
+
+        Debug.Log("[LevelManager] All active objects cleared and counters reset");
     }
 
     public bool IsLevelComplete()
@@ -757,23 +901,18 @@ public class LevelManager : MonoBehaviour
             return true;
         }
 
-        // New method: all objects passed player
-        if (allObjectsPassedPlayer && Time.time - allObjectsPassedTime >= levelCompletionDelay)
+        // NEW: In seamless mode, level completes immediately when main objects are done
+        if (enableSeamlessTransition && levelTransitionTriggered)
         {
-            Debug.Log("[LevelManager] Level complete! All objects have passed the player.");
+            Debug.Log("[LevelManager] Level complete! (Seamless transition mode)");
             return true;
         }
 
-        // Backup method: check remaining objects
-        if (levelCompleting)
+        // Fallback: Traditional completion check
+        if (remainingMainObjects <= 0)
         {
-            levelCheckTimer += Time.deltaTime;
-
-            if (levelCheckTimer >= levelCheckDelay)
-            {
-                Debug.Log("[LevelManager] Level complete! All objects processed.");
-                return true;
-            }
+            Debug.Log("[LevelManager] Level complete! (Traditional method)");
+            return true;
         }
 
         return false;
@@ -797,7 +936,7 @@ public class LevelManager : MonoBehaviour
     {
         if (GameManager.Instance != null && GameManager.Instance.isGameStarted && !GameManager.Instance.gameOver)
         {
-            // Move objects at same speed as road scrolling
+            // NEW: Always use lane scroll speed to keep objects synchronized with road
             float speed = GameManager.Instance.currentSpeed;
             if (LaneManager.Instance != null)
             {
@@ -806,13 +945,13 @@ public class LevelManager : MonoBehaviour
 
             MoveObjects(speed);
 
-            // Check if level is complete
-            if (IsLevelComplete())
+            // In seamless mode, don't use traditional level completion check
+            // The level advances immediately when main objects are done
+            if (!enableSeamlessTransition && IsLevelComplete())
             {
-                // Reset flags
-                levelCompleting = false;
-                allObjectsPassedPlayer = false;
-                allObjectsPassedTime = 0f;
+                // Reset flags for non-seamless mode
+                levelTransitionTriggered = false;
+                newLevelObjectsSpawned = false;
 
                 // Notify game manager
                 GameManager.Instance.CheckLevelCompletion();
