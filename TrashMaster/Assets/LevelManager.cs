@@ -10,14 +10,14 @@ public class LevelManager : MonoBehaviour
     public GameObject[] sideObstaclePrefabs;
 
     [Header("Spawn Settings")]
-    public float minObstacleSpacing = 2f;
-    public float maxObstacleSpacing = 5f;
-    public float sideObstacleSpacing = 3f;
+    public float minObstacleSpacing = 0.2f;      // Extremely close spacing
+    public float maxObstacleSpacing = 0.8f;      // Extremely close spacing
+    public float sideObstacleSpacing = 3f;       // Reverted to original spacing
 
     [Header("Level Settings")]
-    public float trashRatio = 0.7f; // 70% trash, 30% obstacles
-    public int baseObjectCount = 10; // Level 1 starts with 10 objects
-    public int additionalObjectsPerLevel = 5; // Each level adds 5 more objects
+    public float trashRatio = 0.6f;              // Changed from 0.7f to 0.6f (60% trash, 40% obstacles)
+    public int baseObjectCount = 15;             // Changed from 10 to 15
+    public int additionalObjectsPerLevel = 7;    // Increased from 5 to 7 (roughly maintains ratio)
 
     [Header("Level Completion")]
     public float levelCompletionDelay = 3f;
@@ -50,6 +50,9 @@ public class LevelManager : MonoBehaviour
     // Track if all objects have passed player
     private bool allObjectsPassedPlayer = false;
     private float allObjectsPassedTime = 0f;
+
+    // Add counters to track what we actually spawn
+    private Dictionary<string, int> spawnedTrashCounts = new Dictionary<string, int>();
 
     private void Awake()
     {
@@ -147,12 +150,15 @@ public class LevelManager : MonoBehaviour
 
     public void GenerateLevel(int level)
     {
-        // Reset level completion flags
+        // Reset level completion flags and counters
         levelCompleting = false;
         levelCheckTimer = 0f;
         highestObjectY = -100f;
         allObjectsPassedPlayer = false;
         allObjectsPassedTime = 0f;
+
+        // Reset spawn counters
+        spawnedTrashCounts.Clear();
 
         // Clear any active objects
         ClearActiveObjects();
@@ -166,45 +172,7 @@ public class LevelManager : MonoBehaviour
         int trashCount = Mathf.RoundToInt(totalObjects * trashRatio);
         int obstacleCount = totalObjects - trashCount;
 
-        // Adjust trash distribution based on current truck type
-        Dictionary<string, float> trashTypeWeights = new Dictionary<string, float>
-        {
-            { "Paper", 0.25f },
-            { "Plastic", 0.25f },
-            { "Glass", 0.25f },
-            { "General", 0.25f }
-        };
-
-        // Boost the weight of the current truck type
-        if (GameManager.Instance != null)
-        {
-            switch (GameManager.Instance.currentTruckType)
-            {
-                case GameManager.TruckType.Paper:
-                    trashTypeWeights["Paper"] = 0.55f;
-                    trashTypeWeights["Plastic"] = 0.15f;
-                    trashTypeWeights["Glass"] = 0.15f;
-                    trashTypeWeights["General"] = 0.15f;
-                    break;
-                case GameManager.TruckType.Plastic:
-                    trashTypeWeights["Paper"] = 0.15f;
-                    trashTypeWeights["Plastic"] = 0.55f;
-                    trashTypeWeights["Glass"] = 0.15f;
-                    trashTypeWeights["General"] = 0.15f;
-                    break;
-                case GameManager.TruckType.Glass:
-                    trashTypeWeights["Paper"] = 0.15f;
-                    trashTypeWeights["Plastic"] = 0.15f;
-                    trashTypeWeights["Glass"] = 0.55f;
-                    trashTypeWeights["General"] = 0.15f;
-                    break;
-                default: // General
-                    // Keep the default balanced weights
-                    break;
-            }
-        }
-
-        Debug.Log($"[LevelManager] Generating level {level} with {trashCount} trash items and {obstacleCount} obstacles");
+        Debug.Log($"[LevelManager] Generating level {level} with {trashCount} trash items and {obstacleCount} obstacles (total: {totalObjects})");
 
         // Get the total lane count (excluding side lanes)
         int totalLanes = 5; // Default
@@ -220,7 +188,7 @@ public class LevelManager : MonoBehaviour
         // List to track where we'll spawn trash and obstacles
         List<Vector2> mainPositions = new List<Vector2>();
 
-        // Generate main lane positions
+        // Generate main lane positions with closer spacing
         for (int i = 0; i < totalObjects; i++)
         {
             // Randomly select lane (excluding side lanes)
@@ -245,7 +213,7 @@ public class LevelManager : MonoBehaviour
                 highestObjectY = spawnY;
             }
 
-            // Increase spawn distance for next object
+            // Increase spawn distance for next object (reduced spacing)
             float spacing = Random.Range(minObstacleSpacing, maxObstacleSpacing);
             spawnY += spacing;
             maxObjectY = Mathf.Max(maxObjectY, spawnY);
@@ -281,6 +249,14 @@ public class LevelManager : MonoBehaviour
         GenerateSideObstacles(rightSideLane, spawnY);
 
         Debug.Log($"[LevelManager] Level {level} generated with {activeObjects.Count} total objects. Tracking {remainingMainObjects} main objects for completion.");
+
+        // Log actual spawned trash distribution
+        Debug.Log($"[LevelManager] ACTUAL SPAWNED TRASH DISTRIBUTION:");
+        foreach (var kvp in spawnedTrashCounts)
+        {
+            float percentage = (float)kvp.Value / trashCount * 100f;
+            Debug.Log($"[LevelManager]   {kvp.Key}: {kvp.Value}/{trashCount} ({percentage:F1}%)");
+        }
     }
 
     private void SpawnTrashAt(float x, float y, bool isMainObject)
@@ -300,6 +276,26 @@ public class LevelManager : MonoBehaviour
                 if (trashItem == null)
                 {
                     trashItem = trash.AddComponent<TrashItem>();
+                }
+
+                // IMPORTANT: Copy the trash type flags from the selected prefab
+                TrashItem prefabItem = prefab.GetComponent<TrashItem>();
+                if (prefabItem != null)
+                {
+                    trashItem.isPaper = prefabItem.isPaper;
+                    trashItem.isPlastic = prefabItem.isPlastic;
+                    trashItem.isGlass = prefabItem.isGlass;
+                    trashItem.isGeneral = prefabItem.isGeneral;
+                    trashItem.pointValue = prefabItem.pointValue;
+                }
+
+                // IMPORTANT: Update the visual sprite to match the selected prefab
+                SpriteRenderer trashSpriteRenderer = trash.GetComponent<SpriteRenderer>();
+                SpriteRenderer prefabSpriteRenderer = prefab.GetComponent<SpriteRenderer>();
+                if (trashSpriteRenderer != null && prefabSpriteRenderer != null)
+                {
+                    trashSpriteRenderer.sprite = prefabSpriteRenderer.sprite;
+                    trashSpriteRenderer.color = prefabSpriteRenderer.color;
                 }
 
                 // Set this flag to help with level completion tracking
@@ -327,6 +323,24 @@ public class LevelManager : MonoBehaviour
                 // Activate and track
                 trash.SetActive(true);
                 activeObjects.Add(trash);
+
+                // Count what type we actually spawned
+                TrashItem spawnedItem = trash.GetComponent<TrashItem>();
+                if (spawnedItem != null)
+                {
+                    string trashType = "Unknown";
+                    if (spawnedItem.isPaper) trashType = "Paper";
+                    else if (spawnedItem.isPlastic) trashType = "Plastic";
+                    else if (spawnedItem.isGlass) trashType = "Glass";
+                    else if (spawnedItem.isGeneral) trashType = "General";
+
+                    if (!spawnedTrashCounts.ContainsKey(trashType))
+                        spawnedTrashCounts[trashType] = 0;
+                    spawnedTrashCounts[trashType]++;
+
+                    // Debug log to verify the fix
+                    Debug.Log($"[LevelManager] Spawned {trashType} trash from prefab {prefab.name} with sprite {trashSpriteRenderer?.sprite?.name}");
+                }
             }
         }
     }
@@ -363,58 +377,96 @@ public class LevelManager : MonoBehaviour
             }
         }
 
-        // Debug information to verify categorization worked
-        if (showDebugInfo)
-        {
-            Debug.Log($"Found {paperTrash.Count} paper, {plasticTrash.Count} plastic, {glassTrash.Count} glass, {generalTrash.Count} general trash prefabs");
-        }
-
-        // Use high probability (75%) for matching type
-        float matchingTypeChance = 0.75f;
+        // NEW: Use 70% probability for matching type when truck is specialized
+        float matchingTypeChance = 0.7f; // 70% chance for specific type
+        float randomValue = Random.value;
 
         // Select trash based on current truck type with higher probability for matching type
         switch (currentType)
         {
             case GameManager.TruckType.Paper:
-                if (paperTrash.Count > 0 && Random.value < matchingTypeChance)
-                    return paperTrash[Random.Range(0, paperTrash.Count)];
+                if (paperTrash.Count > 0)
+                {
+                    if (randomValue < matchingTypeChance)
+                    {
+                        // 98% chance: return paper trash
+                        return paperTrash[Random.Range(0, paperTrash.Count)];
+                    }
+                    else
+                    {
+                        // 2% chance: return other types
+                        List<GameObject> otherTypes = new List<GameObject>();
+                        otherTypes.AddRange(plasticTrash);
+                        otherTypes.AddRange(glassTrash);
+                        otherTypes.AddRange(generalTrash);
+                        if (otherTypes.Count > 0)
+                            return otherTypes[Random.Range(0, otherTypes.Count)];
+                        else
+                            return paperTrash[Random.Range(0, paperTrash.Count)];
+                    }
+                }
                 break;
 
             case GameManager.TruckType.Plastic:
-                if (plasticTrash.Count > 0 && Random.value < matchingTypeChance)
-                    return plasticTrash[Random.Range(0, plasticTrash.Count)];
+                if (plasticTrash.Count > 0)
+                {
+                    if (randomValue < matchingTypeChance)
+                    {
+                        // 98% chance: return plastic trash
+                        return plasticTrash[Random.Range(0, plasticTrash.Count)];
+                    }
+                    else
+                    {
+                        // 2% chance: return other types
+                        List<GameObject> otherTypes = new List<GameObject>();
+                        otherTypes.AddRange(paperTrash);
+                        otherTypes.AddRange(glassTrash);
+                        otherTypes.AddRange(generalTrash);
+                        if (otherTypes.Count > 0)
+                            return otherTypes[Random.Range(0, otherTypes.Count)];
+                        else
+                            return plasticTrash[Random.Range(0, plasticTrash.Count)];
+                    }
+                }
                 break;
 
             case GameManager.TruckType.Glass:
-                if (glassTrash.Count > 0 && Random.value < matchingTypeChance)
-                    return glassTrash[Random.Range(0, glassTrash.Count)];
+                if (glassTrash.Count > 0)
+                {
+                    if (randomValue < matchingTypeChance)
+                    {
+                        // 98% chance: return glass trash
+                        return glassTrash[Random.Range(0, glassTrash.Count)];
+                    }
+                    else
+                    {
+                        // 2% chance: return other types
+                        List<GameObject> otherTypes = new List<GameObject>();
+                        otherTypes.AddRange(paperTrash);
+                        otherTypes.AddRange(plasticTrash);
+                        otherTypes.AddRange(generalTrash);
+                        if (otherTypes.Count > 0)
+                            return otherTypes[Random.Range(0, otherTypes.Count)];
+                        else
+                            return glassTrash[Random.Range(0, glassTrash.Count)];
+                    }
+                }
                 break;
 
             case GameManager.TruckType.General:
                 // For general truck, distribute evenly among all types
-                int typeChoice = Random.Range(0, 4);
-                if (typeChoice == 0 && paperTrash.Count > 0)
-                    return paperTrash[Random.Range(0, paperTrash.Count)];
-                else if (typeChoice == 1 && plasticTrash.Count > 0)
-                    return plasticTrash[Random.Range(0, plasticTrash.Count)];
-                else if (typeChoice == 2 && glassTrash.Count > 0)
-                    return glassTrash[Random.Range(0, glassTrash.Count)];
-                else if (typeChoice == 3 && generalTrash.Count > 0)
-                    return generalTrash[Random.Range(0, generalTrash.Count)];
+                List<GameObject> allTrashTypes = new List<GameObject>();
+                allTrashTypes.AddRange(paperTrash);
+                allTrashTypes.AddRange(plasticTrash);
+                allTrashTypes.AddRange(glassTrash);
+                allTrashTypes.AddRange(generalTrash);
+
+                if (allTrashTypes.Count > 0)
+                    return allTrashTypes[Random.Range(0, allTrashTypes.Count)];
                 break;
         }
 
-        // If we didn't select a type-specific trash, or for fallback,
-        // randomly choose any trash type
-        List<GameObject> allValidTrash = new List<GameObject>();
-        allValidTrash.AddRange(trashPrefabs);
-
-        if (allValidTrash.Count > 0)
-        {
-            return allValidTrash[Random.Range(0, allValidTrash.Count)];
-        }
-
-        // Fallback if something went wrong
+        // Final fallback if something went wrong
         return trashPrefabs[Random.Range(0, trashPrefabs.Length)];
     }
 
@@ -531,7 +583,7 @@ public class LevelManager : MonoBehaviour
                     SpriteRenderer sr = obstacle.GetComponent<SpriteRenderer>();
                     if (sr != null)
                     {
-                        // Add spacing based on obstacle height
+                        // Add spacing based on obstacle height (normal side spacing)
                         float height = sr.bounds.size.y;
                         spawnY += height + Random.Range(1f, sideObstacleSpacing);
 
