@@ -181,14 +181,37 @@ public class SimpleScrollingTextManager : MonoBehaviour
     {
         if (LaneManager.Instance != null)
         {
+            // Calculate the actual visual center of the road by averaging the leftmost and rightmost playable lane positions
             int totalLanes = LaneManager.Instance.GetTotalLaneCount();
-            int middleLane = totalLanes / 2;
-            return LaneManager.Instance.GetLanePosition(middleLane).x;
+
+            if (totalLanes >= 3) // Must have at least 2 side lanes + 1 center lane
+            {
+                int leftmostPlayableLane = 1; // First center lane (after left side lane)
+                int rightmostPlayableLane = totalLanes - 2; // Last center lane (before right side lane)
+
+                float leftX = LaneManager.Instance.GetLanePosition(leftmostPlayableLane).x;
+                float rightX = LaneManager.Instance.GetLanePosition(rightmostPlayableLane).x;
+
+                // The visual center is exactly halfway between the leftmost and rightmost playable lanes
+                float centerX = (leftX + rightX) / 2f;
+
+                if (debugMode)
+                {
+                    Debug.Log($"[SimpleScrollingTextManager] Road center calculated: {centerX} (between lanes {leftmostPlayableLane} and {rightmostPlayableLane})");
+                    Debug.Log($"[SimpleScrollingTextManager] Left lane X: {leftX}, Right lane X: {rightX}");
+                }
+
+                return centerX;
+            }
+        }
+
+        // Fallback to world center if LaneManager not available or insufficient lanes
+        if (debugMode)
+        {
+            Debug.LogWarning("[SimpleScrollingTextManager] Using fallback center position (0,0)");
         }
         return 0f;
     }
-
-
 }
 
 public class SimpleScrollingText : MonoBehaviour
