@@ -145,9 +145,6 @@ public class TrashItem : MonoBehaviour
         }
     }
 
-    // Remove this coroutine method as it's no longer needed
-    // private IEnumerator ResetPenaltyAfterDelay(float delay) - REMOVED
-
     private void CollectCorrectType()
     {
         if (!isCollected)

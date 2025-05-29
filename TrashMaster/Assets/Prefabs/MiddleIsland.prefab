@@ -149,3 +149,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   isComplexObstacle: 1
   linkedParts: []
+  collisionEffectPrefab: {fileID: 0}
+  isMainObject: 1

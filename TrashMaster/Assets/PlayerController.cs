@@ -1,6 +1,4 @@
-using System.Buffers.Text;
 using UnityEngine;
-using static LaneManager;
 
 public class PlayerController : MonoBehaviour
 {
@@ -133,8 +131,6 @@ public class PlayerController : MonoBehaviour
             // Side lanes are typically at index 0 and (total-1)
             minPlayableLane = 1; // First playable lane (after left side lane)
             maxPlayableLane = centerLaneCount; // Last playable lane (before right side lane)
-
-            //Debug.Log($"Updated lane boundaries: {minPlayableLane}-{maxPlayableLane}, Total center lanes: {centerLaneCount}");
 
             // Make sure current lane is within bounds
             if (currentLane < minPlayableLane)

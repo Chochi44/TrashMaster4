@@ -110,6 +110,22 @@ public class LevelManager : MonoBehaviour
                 CreatePooledObject(sideObstaclePrefabs[Random.Range(0, sideObstaclePrefabs.Length)], pooledSideObstacles);
             }
         }
+
+        // For islands, create fewer pooled objects since they're complex
+        if (obstaclePrefabs != null)
+        {
+            foreach (GameObject prefab in obstaclePrefabs)
+            {
+                if (prefab.name.ToLower().Contains("island") || prefab.GetComponent<IslandController>() != null)
+                {
+                    // Create only 2-3 island objects in pool since they're complex
+                    for (int i = 0; i < 3; i++)
+                    {
+                        CreatePooledObject(prefab, pooledObstacles);
+                    }
+                }
+            }
+        }
     }
 
     private GameObject CreatePooledObject(GameObject prefab, List<GameObject> pool)
@@ -475,61 +491,102 @@ public class LevelManager : MonoBehaviour
         if (obstaclePrefabs != null && obstaclePrefabs.Length > 0)
         {
             GameObject prefab = obstaclePrefabs[Random.Range(0, obstaclePrefabs.Length)];
+
+            // Check if this is an island prefab
+            bool isIslandPrefab = prefab.name.ToLower().Contains("island") ||
+                                 prefab.GetComponent<IslandController>() != null;
+
+            // Skip island if there's already one active or if it would be too big for current level
+            if (isIslandPrefab && ShouldSkipIsland())
+            {
+                // Select a different obstacle instead
+                GameObject[] nonIslandPrefabs = System.Array.FindAll(obstaclePrefabs,
+                    p => !p.name.ToLower().Contains("island") && p.GetComponent<IslandController>() == null);
+
+                if (nonIslandPrefabs.Length > 0)
+                {
+                    prefab = nonIslandPrefabs[Random.Range(0, nonIslandPrefabs.Length)];
+                    isIslandPrefab = false;
+                }
+            }
+
             GameObject obstacle = GetPooledObject(pooledObstacles, prefab);
 
             if (obstacle != null)
             {
                 obstacle.transform.position = new Vector3(x, y, 0);
 
-                // Check if this is a complex obstacle (Island)
-                IslandController islandController = obstacle.GetComponent<IslandController>();
-                if (islandController != null)
+                if (isIslandPrefab)
                 {
-                    // This is a complex obstacle, set it up
-                    islandController.SetMainObjectParts(isMainObject);
-
-                    // Make sure the entire island is positioned correctly
-                    islandController.SetPosition(new Vector3(x, y, 0));
+                    SetupIslandObstacle(obstacle, isMainObject);
                 }
                 else
                 {
-                    // Regular obstacle, add the normal ObstacleItem component
-                    ObstacleItem obstacleItem = obstacle.GetComponent<ObstacleItem>();
-                    if (obstacleItem == null)
-                    {
-                        obstacleItem = obstacle.AddComponent<ObstacleItem>();
-                    }
-
-                    // Set this flag to help with level completion tracking
-                    obstacleItem.isMainObject = isMainObject;
+                    SetupRegularObstacle(obstacle, isMainObject);
                 }
 
-                // Make sure it's tagged properly
-                obstacle.tag = "Obstacle";
-
-                // Ensure collider is correctly set if not a complex obstacle
-                if (islandController == null)
-                {
-                    BoxCollider2D collider = obstacle.GetComponent<BoxCollider2D>();
-                    if (collider == null)
-                    {
-                        collider = obstacle.AddComponent<BoxCollider2D>();
-                    }
-                    collider.isTrigger = true;
-
-                    // Set collider size from sprite if needed
-                    SpriteRenderer sr = obstacle.GetComponent<SpriteRenderer>();
-                    if (sr != null && (collider.size.x <= 0.001f || collider.size.y <= 0.001f))
-                    {
-                        collider.size = sr.sprite.bounds.size;
-                    }
-                }
-
-                // Activate and track
                 obstacle.SetActive(true);
                 activeObjects.Add(obstacle);
             }
         }
+    }
+
+    private bool ShouldSkipIsland()
+    {
+        // Check if there's already an active island
+        foreach (GameObject obj in activeObjects)
+        {
+            if (obj != null && obj.activeInHierarchy &&
+                (obj.name.ToLower().Contains("island") || obj.GetComponent<IslandController>() != null))
+            {
+                return true; // Skip - already have an island
+            }
+        }
+
+        // Also consider screen height limitations
+        float screenHeight = Camera.main ? Camera.main.orthographicSize * 2 : 10f;
+        float maxIslandHeight = screenHeight * 0.6f; // Island shouldn't exceed 60% of screen height
+
+        // You can add more logic here based on current level, etc.
+        return false;
+    }
+
+    private void SetupIslandObstacle(GameObject obstacle, bool isMainObject)
+    {
+        IslandController controller = obstacle.GetComponent<IslandController>();
+        if (controller != null)
+        {
+            // Randomize middle part count based on screen size
+            float screenHeight = Camera.main ? Camera.main.orthographicSize * 2 : 10f;
+            float maxIslandHeight = screenHeight * 0.5f; // 50% of screen height max
+
+            // Estimate heights (you may need to adjust these values)
+            float estimatedPartHeight = 0.8f; // Approximate height of each part
+            int maxMiddleParts = Mathf.Max(0, Mathf.FloorToInt(maxIslandHeight / estimatedPartHeight) - 2); // -2 for top and bottom
+
+            // Randomize but clamp to reasonable size
+            controller.middlePartCount = Random.Range(0, Mathf.Min(maxMiddleParts + 1, 4)); // Max 4 middle parts
+
+            controller.SetMainObjectParts(isMainObject);
+        }
+
+        // Make sure it's tagged properly
+        obstacle.tag = "Obstacle";
+    }
+
+    private void SetupRegularObstacle(GameObject obstacle, bool isMainObject)
+    {
+        // Your existing regular obstacle setup code
+        ObstacleItem obstacleItem = obstacle.GetComponent<ObstacleItem>();
+        if (obstacleItem == null)
+        {
+            obstacleItem = obstacle.AddComponent<ObstacleItem>();
+        }
+
+        obstacleItem.isMainObject = isMainObject;
+        obstacle.tag = "Obstacle";
+
+        // Setup collider as before...
     }
 
     private void GenerateSideObstacles(int lane, float maxSpawnY)
