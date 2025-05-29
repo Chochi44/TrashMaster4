@@ -31,37 +31,57 @@ public class IslandController : MonoBehaviour
 
     private void CreateIslandParts()
     {
-        // Clear any existing parts
+        // Clear any existing parts first
         foreach (Transform child in transform)
         {
-            Destroy(child.gameObject);
+            if (Application.isPlaying)
+                Destroy(child.gameObject);
+            else
+                DestroyImmediate(child.gameObject);
         }
         allParts.Clear();
         totalHeight = 0f;
 
-        // Create top part
+        // Clamp middle part count to reasonable limits
+        middlePartCount = Mathf.Clamp(middlePartCount, 0, 4);
+
+        // Create parts as in your existing code but add height checking
+        CreateTopPart();
+        CreateMiddleParts();
+        CreateBottomPart();
+
+        // After creation, check if total height is reasonable
+        float screenHeight = Camera.main ? Camera.main.orthographicSize * 2 : 10f;
+        if (totalHeight > screenHeight * 0.7f)
+        {
+            Debug.LogWarning($"Island height ({totalHeight}) exceeds recommended screen percentage. Consider reducing middle parts.");
+        }
+
+        LinkObstacleParts();
+        isSetup = true;
+    }
+
+    // Add these helper methods to break up the creation process
+    private void CreateTopPart()
+    {
         if (topPartPrefab != null)
         {
             GameObject top = Instantiate(topPartPrefab, transform);
             allParts.Add(top);
             top.transform.localPosition = Vector3.zero;
 
-            // Get height of top part
             SpriteRenderer topRenderer = top.GetComponent<SpriteRenderer>();
             if (topRenderer != null)
             {
                 totalHeight += topRenderer.bounds.size.y;
             }
-            else
-            {
-                totalHeight += 0.5f; // Default height if no renderer
-            }
 
-            // Set up obstacle component
             SetupObstacleItem(top);
         }
+    }
 
-        // Create middle parts
+    private void CreateMiddleParts()
+    {
         if (middlePartPrefab != null)
         {
             for (int i = 0; i < middlePartCount; i++)
@@ -69,53 +89,36 @@ public class IslandController : MonoBehaviour
                 GameObject middle = Instantiate(middlePartPrefab, transform);
                 allParts.Add(middle);
 
-                // Position at current height
                 middle.transform.localPosition = new Vector3(0, -totalHeight, 0);
 
-                // Get height of middle part
                 SpriteRenderer middleRenderer = middle.GetComponent<SpriteRenderer>();
                 if (middleRenderer != null)
                 {
                     totalHeight += middleRenderer.bounds.size.y;
                 }
-                else
-                {
-                    totalHeight += 0.5f; // Default height if no renderer
-                }
 
-                // Set up obstacle component
                 SetupObstacleItem(middle);
             }
         }
+    }
 
-        // Create bottom part
+    private void CreateBottomPart()
+    {
         if (bottomPartPrefab != null)
         {
             GameObject bottom = Instantiate(bottomPartPrefab, transform);
             allParts.Add(bottom);
 
-            // Position at current height
             bottom.transform.localPosition = new Vector3(0, -totalHeight, 0);
 
-            // Get height of bottom part
             SpriteRenderer bottomRenderer = bottom.GetComponent<SpriteRenderer>();
             if (bottomRenderer != null)
             {
                 totalHeight += bottomRenderer.bounds.size.y;
             }
-            else
-            {
-                totalHeight += 0.5f; // Default height if no renderer
-            }
 
-            // Set up obstacle component
             SetupObstacleItem(bottom);
         }
-
-        // Now link all parts together
-        LinkObstacleParts();
-
-        isSetup = true;
     }
 
     private void SetupObstacleItem(GameObject part)
